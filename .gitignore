@@ -1,0 +1,19 @@
+zz*
+sarjy_memory.db
+__pycache__/
+
+# Secrets
+.env
+
+# Virtual envs
+.venv/
+venv/
+
+# Local model / data caches
+.cache/
+data/
+models/piper/
+
+# Tooling
+.ruff_cache/
+.pytest_cache/
