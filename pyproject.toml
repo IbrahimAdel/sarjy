@@ -22,6 +22,8 @@ dependencies = [
 dev = [
     "basedpyright>=1.38.0",
     "pre-commit>=4.0.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
     "ruff>=0.15.0",
 ]
 
@@ -32,3 +34,8 @@ pythonVersion = "3.12"
 reportUnknownMemberType = "none"
 reportUnknownVariableType = "none"
 reportMissingTypeStubs = "none"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
+testpaths = ["tests"]

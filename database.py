@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool
 
 from settings import get_settings
 
@@ -16,7 +17,11 @@ def _async_database_url(url: str) -> str:
 
 DATABASE_URL = _async_database_url(get_settings().database_url)
 
-engine = create_async_engine(DATABASE_URL)
+engine = create_async_engine(
+    DATABASE_URL,
+    # SQLite is file-based; NullPool avoids connections leaking across event loops.
+    poolclass=NullPool if DATABASE_URL.startswith("sqlite") else None,
+)
 AsyncSessionLocal = async_sessionmaker(
     engine,
     class_=AsyncSession,
