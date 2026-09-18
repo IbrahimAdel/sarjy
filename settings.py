@@ -29,6 +29,9 @@ class Settings(BaseSettings):
 
     sample_rate: int = Field(default=16000)
 
+    log_level: str = Field(default="INFO")
+    log_format: str = Field(default="text")
+
     def require_openai_api_key(self) -> str:
         if not self.openai_api_key.strip():
             msg = (

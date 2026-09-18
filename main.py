@@ -10,6 +10,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import AsyncSessionLocal
+from observability import TurnMetrics, configure_logging, metrics
 from services.llm_service import LLMEngine
 from services.voice.audio import iter_pcm_frames, resample_pcm16
 from services.voice.pipeline import VoiceSession
@@ -38,18 +39,25 @@ OUT_FRAME_MS = 20
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
+    configure_logging(settings.log_level, settings.log_format)
     settings.require_openai_api_key()
 
     app.state.settings = settings
     app.state.stt = await asyncio.to_thread(load_speech_to_text, settings)
     app.state.tts = await asyncio.to_thread(load_text_to_speech, settings)
     logger.info(
-        "Sarjy started (stt_available=%s, tts_available=%s)",
-        app.state.stt.available,
-        app.state.tts.available,
+        "startup_complete",
+        extra={
+            "fields": {
+                "stt_available": app.state.stt.available,
+                "tts_available": app.state.tts.available,
+                "stt_model": settings.whisper_model,
+                "log_format": settings.log_format,
+            }
+        },
     )
     yield
-    logger.info("Sarjy shutting down")
+    logger.info("shutdown_complete")
 
 
 app = FastAPI(title="Sarjy Voice Assistant", lifespan=lifespan)
@@ -70,6 +78,11 @@ class ConnectionState:
 @app.get("/")
 async def root() -> dict[str, str]:
     return {"message": "Sarjy API running"}
+
+
+@app.get("/metrics")
+async def metrics_endpoint() -> dict[str, Any]:
+    return metrics.snapshot()
 
 
 async def _send_json(
@@ -118,6 +131,7 @@ async def _speak(
     state: ConnectionState,
     tts: TextToSpeech,
     text: str,
+    turn: TurnMetrics,
 ) -> None:
     if not tts.available:
         return
@@ -136,6 +150,7 @@ async def _speak(
         state.speaking = True
         await _send_json(websocket, state, status_message(AssistantState.SPEAKING))
 
+    turn.mark("tts_first_audio")
     frame_bytes = int(output_rate * OUT_FRAME_MS / 1000) * 2
     for frame in iter_pcm_frames(pcm, frame_bytes):
         await _send_bytes(websocket, state, frame)
@@ -146,29 +161,52 @@ async def _run_llm(
     state: ConnectionState,
     tts: TextToSpeech,
     transcript: str,
+    turn: TurnMetrics,
 ) -> None:
     llm = LLMEngine(user_id=state.user_id, conversation_id=state.conversation_id)
     state.speaking = False
     await _send_json(websocket, state, status_message(AssistantState.THINKING))
-    try:
-        tokens = llm.generate_response_stream(
+    turn.mark("llm_start")
+
+    first_token = True
+
+    async def _tokens() -> AsyncIterator[str]:
+        nonlocal first_token
+        async for token in llm.generate_response_stream(
             session=state.session, user_transcript=transcript
-        )
-        async for sentence in _stream_sentences(tokens):
+        ):
+            if first_token:
+                turn.mark("llm_first_token")
+                first_token = False
+            yield token
+
+    try:
+        async for sentence in _stream_sentences(_tokens()):
             await _send_json(
                 websocket,
                 state,
                 {"event": ServerEvent.TEXT_CHUNK, "text": sentence},
             )
-            await _speak(websocket, state, tts, sentence)
+            await _speak(websocket, state, tts, sentence, turn)
     except asyncio.CancelledError:
-        logger.info("Response cancelled (barge-in)")
+        turn.mark("done")
+        fields = turn.fields()
+        logger.info("turn_cancelled", extra={"fields": fields})
+        metrics.record_turn(fields, cancelled=True)
         raise
     except Exception:
-        logger.exception("LLM generation failed")
+        turn.mark("done")
+        fields = turn.fields()
+        logger.exception("llm_generation_failed", extra={"fields": fields})
+        metrics.record_turn(fields, error=True)
         await _send_json(
             websocket, state, error_message("Failed to generate a response.")
         )
+    else:
+        turn.mark("done")
+        fields = turn.fields()
+        logger.info("turn_complete", extra={"fields": fields})
+        metrics.record_turn(fields)
 
     state.speaking = False
     await _send_json(websocket, state, status_message(AssistantState.IDLE))
@@ -179,10 +217,11 @@ async def _start_response(
     state: ConnectionState,
     tts: TextToSpeech,
     transcript: str,
+    turn: TurnMetrics,
 ) -> None:
     await _cancel_response(state)
     state.response_task = asyncio.create_task(
-        _run_llm(websocket, state, tts, transcript)
+        _run_llm(websocket, state, tts, transcript, turn)
     )
 
 
@@ -204,7 +243,11 @@ async def _handle_text(
         if not text:
             await _send_json(websocket, state, error_message("Empty transcript."))
             return
-        await _start_response(websocket, state, tts, text)
+        turn = TurnMetrics(
+            user_id=state.user_id, conversation_id=state.conversation_id
+        )
+        turn.mark("asr_end")
+        await _start_response(websocket, state, tts, text, turn)
 
     elif event == ClientEvent.START:
         await _cancel_response(state)
@@ -279,6 +322,11 @@ async def _handle_audio(
     result = state.voice.process_audio(data)
 
     if result.speech_started:
+        if state.response_task is not None and not state.response_task.done():
+            logger.info(
+                "barge_in",
+                extra={"fields": {"conversation_id": state.conversation_id}},
+            )
         await _cancel_response(state)
         state.speaking = False
         await _send_json(websocket, state, status_message(AssistantState.LISTENING))
@@ -291,27 +339,57 @@ async def _handle_audio(
 
     if not stt.available:
         logger.info(
-            "Detected utterance (%.0f ms) but no STT backend is configured.",
-            result.segment.duration_ms,
+            "utterance_detected",
+            extra={
+                "fields": {
+                    "duration_ms": round(result.segment.duration_ms, 1),
+                    "stt_available": False,
+                }
+            },
         )
         return
 
+    turn = TurnMetrics(user_id=state.user_id, conversation_id=state.conversation_id)
+    logger.info(
+        "utterance_detected",
+        extra={
+            "fields": {
+                "turn_id": turn.turn_id,
+                "duration_ms": round(result.segment.duration_ms, 1),
+            }
+        },
+    )
+
+    turn.mark("asr_start")
     try:
-        text = (await stt.transcribe(result.segment.pcm, result.segment.sample_rate)).strip()
+        text = (
+            await stt.transcribe(result.segment.pcm, result.segment.sample_rate)
+        ).strip()
     except Exception:
-        logger.exception("Transcription failed")
+        turn.mark("done")
+        fields = turn.fields()
+        logger.exception("transcription_failed", extra={"fields": fields})
+        metrics.record_turn(fields, error=True)
         await _send_json(
             websocket, state, error_message("Failed to transcribe audio.")
         )
         await _send_json(websocket, state, status_message(AssistantState.LISTENING))
         return
+    turn.mark("asr_end")
 
     if not text:
+        logger.info(
+            "transcript_empty", extra={"fields": {"turn_id": turn.turn_id}}
+        )
         await _send_json(websocket, state, status_message(AssistantState.LISTENING))
         return
 
+    logger.info(
+        "transcript_ready",
+        extra={"fields": {"turn_id": turn.turn_id, "chars": len(text)}},
+    )
     await _send_json(websocket, state, transcript_message(text, final=True))
-    await _start_response(websocket, state, tts, text)
+    await _start_response(websocket, state, tts, text, turn)
 
 
 @app.websocket("/ws/audio")
@@ -327,6 +405,15 @@ async def websocket_audio_endpoint(websocket: WebSocket) -> None:
         conversation_id=websocket.query_params.get("conversation_id") or gen_uuid(),
         session=AsyncSessionLocal(),
         voice=VoiceSession(sample_rate=settings.sample_rate),
+    )
+    logger.info(
+        "connection_open",
+        extra={
+            "fields": {
+                "user_id": state.user_id,
+                "conversation_id": state.conversation_id,
+            }
+        },
     )
 
     await _send_json(websocket, state, status_message(AssistantState.LISTENING))
@@ -346,7 +433,9 @@ async def websocket_audio_endpoint(websocket: WebSocket) -> None:
                     websocket, state, stt, tts, data, partial_interval_s
                 )
     except WebSocketDisconnect:
-        logger.info("WebSocket client disconnected")
+        logger.info(
+            "connection_closed", extra={"fields": {"user_id": state.user_id}}
+        )
     finally:
         await _cancel_response(state)
         await state.session.close()
