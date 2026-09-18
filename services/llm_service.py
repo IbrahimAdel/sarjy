@@ -8,7 +8,7 @@ from openai import AsyncOpenAI
 from openai.types.chat import (
     ChatCompletionToolParam,
 )
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.conversation_service import ConversationService
 from services.memory_service import MemoryService
@@ -44,9 +44,11 @@ class LLMEngine:
     def __init__(self, user_id: str, conversation_id: str) -> None:
         self.user_id = user_id
         self.conversation_id = conversation_id
+        # An AsyncSession cannot be used concurrently; serialise DB tools.
+        self._db_lock = asyncio.Lock()
 
     async def _execute_tool(
-        self, session: Session, name: str, args: dict[str, Any]
+        self, session: AsyncSession, name: str, args: dict[str, Any]
     ) -> str:
         if name == "get_weather":
             try:
@@ -60,31 +62,34 @@ class LLMEngine:
 
         if name == "save_preference":
             try:
-                return str(
-                    MemoryService.set_user_preference(
-                        session,
-                        self.user_id,
-                        str(args["key"]),
-                        str(args["value"]),
+                async with self._db_lock:
+                    return str(
+                        await MemoryService.set_user_preference(
+                            session,
+                            self.user_id,
+                            str(args["key"]),
+                            str(args["value"]),
+                        )
                     )
-                )
             except (KeyError, TypeError, ValueError) as exc:
                 return f"Could not save preference: invalid arguments ({exc})."
 
         return "Tool not found."
 
-    def _build_messages(
-        self, session: Session, user_transcript: str
+    async def _build_messages(
+        self, session: AsyncSession, user_transcript: str
     ) -> list[dict[str, Any]]:
-        ConversationService.append_message(
+        await ConversationService.append_message(
             session,
             self.conversation_id,
             self.user_id,
             "user",
             user_transcript,
         )
-        history = ConversationService.get_history(session, self.conversation_id)
-        preferences = MemoryService.get_user_preferences(session, self.user_id)
+        history = await ConversationService.get_history(
+            session, self.conversation_id
+        )
+        preferences = await MemoryService.get_user_preferences(session, self.user_id)
 
         system_prompt = (
             "You are Sarjy, an upbeat voice assistant. Keep answers brief, spoken "
@@ -94,12 +99,12 @@ class LLMEngine:
         return [{"role": "system", "content": system_prompt}, *history]
 
     async def generate_response_stream(
-        self, session: Session, user_transcript: str
+        self, session: AsyncSession, user_transcript: str
     ) -> AsyncGenerator[str]:
         settings = get_settings()
         client = get_openai_client()
 
-        messages = self._build_messages(session, user_transcript)
+        messages = await self._build_messages(session, user_transcript)
         tools: list[ChatCompletionToolParam] = [  # pyright: ignore[reportAssignmentType]
             WEATHER_TOOL_SPEC,
             MEMORY_TOOL_SPEC,
@@ -185,7 +190,7 @@ class LLMEngine:
 
         final_answer = "".join(answer_parts).strip()
         if final_answer:
-            ConversationService.append_message(
+            await ConversationService.append_message(
                 session,
                 self.conversation_id,
                 self.user_id,

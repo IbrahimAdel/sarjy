@@ -1,5 +1,5 @@
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.message import ConversationMessage
 
@@ -13,8 +13,8 @@ class ConversationService:
         raise TypeError(msg)
 
     @staticmethod
-    def append_message(
-        session: Session,
+    async def append_message(
+        session: AsyncSession,
         conversation_id: str,
         user_id: str,
         role: str,
@@ -28,25 +28,27 @@ class ConversationService:
                 content=content,
             )
         )
-        session.commit()
+        await session.commit()
 
     @staticmethod
-    def get_history(
-        session: Session,
+    async def get_history(
+        session: AsyncSession,
         conversation_id: str,
         *,
         max_messages: int = MAX_HISTORY_MESSAGES,
         max_chars: int = MAX_HISTORY_CHARS,
     ) -> list[dict[str, str]]:
         """Recent turns, oldest-first, trimmed to a character budget."""
-        rows = session.execute(
-            select(ConversationMessage.role, ConversationMessage.content)
-            .where(ConversationMessage.conversation_id == conversation_id)
-            .order_by(
-                ConversationMessage.created_at.desc(),
-                ConversationMessage.id.desc(),
+        rows = (
+            await session.execute(
+                select(ConversationMessage.role, ConversationMessage.content)
+                .where(ConversationMessage.conversation_id == conversation_id)
+                .order_by(
+                    ConversationMessage.created_at.desc(),
+                    ConversationMessage.id.desc(),
+                )
+                .limit(max_messages)
             )
-            .limit(max_messages)
         ).fetchall()
 
         history = [{"role": row[0], "content": row[1]} for row in reversed(rows)]

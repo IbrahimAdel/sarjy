@@ -7,9 +7,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from database import SessionLocal
+from database import AsyncSessionLocal
 from services.llm_service import LLMEngine
 from services.voice.audio import iter_pcm_frames, resample_pcm16
 from services.voice.pipeline import VoiceSession
@@ -59,7 +59,7 @@ app = FastAPI(title="Sarjy Voice Assistant", lifespan=lifespan)
 class ConnectionState:
     user_id: str
     conversation_id: str
-    session: Session
+    session: AsyncSession
     voice: VoiceSession
     last_partial_at: float = field(default=0.0)
     speaking: bool = False
@@ -325,7 +325,7 @@ async def websocket_audio_endpoint(websocket: WebSocket) -> None:
     state = ConnectionState(
         user_id=websocket.query_params.get("user_id", "default_user"),
         conversation_id=websocket.query_params.get("conversation_id") or gen_uuid(),
-        session=SessionLocal(),
+        session=AsyncSessionLocal(),
         voice=VoiceSession(sample_rate=settings.sample_rate),
     )
 
@@ -349,4 +349,4 @@ async def websocket_audio_endpoint(websocket: WebSocket) -> None:
         logger.info("WebSocket client disconnected")
     finally:
         await _cancel_response(state)
-        state.session.close()
+        await state.session.close()
