@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database import Base
@@ -12,7 +12,9 @@ class UserPreference(Base):
     __table_args__ = (UniqueConstraint("user_id", "key"),)
 
     id: Mapped[str] = mapped_column(String(), primary_key=True, default=gen_uuid)
-    user_id: Mapped[str] = mapped_column(String(), index=True)
+    user_id: Mapped[str] = mapped_column(
+        String(), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
 
     key: Mapped[str] = mapped_column(String(), index=True)
     value: Mapped[str] = mapped_column(String(), nullable=False)

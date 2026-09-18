@@ -56,8 +56,9 @@ def test_parse_tool_arguments(raw, expected):
     assert _parse_tool_arguments(raw) == expected
 
 
-async def test_direct_response_streams_and_persists(db_session, monkeypatch):
-    client = _FakeClient([[ _chunk(content="Hello "), _chunk(content="there.")]])
+async def test_direct_response_streams_and_persists(db_session, create_user, monkeypatch):
+    await create_user(db_session, "u1")
+    client = _FakeClient([[_chunk(content="Hello "), _chunk(content="there.")]])
     monkeypatch.setattr(llm_service, "get_openai_client", lambda: client)
 
     engine = LLMEngine(user_id="u1", conversation_id="c1")
@@ -75,7 +76,10 @@ async def test_direct_response_streams_and_persists(db_session, monkeypatch):
     ]
 
 
-async def test_tool_loop_runs_concurrently_and_continues(db_session, monkeypatch):
+async def test_tool_loop_runs_concurrently_and_continues(
+    db_session, create_user, monkeypatch
+):
+    await create_user(db_session, "u1")
     rounds = [
         [
             _chunk(tool_calls=[_tool_call(0, id="c1", arguments='{"key":')]),
@@ -110,7 +114,8 @@ async def test_tool_loop_runs_concurrently_and_continues(db_session, monkeypatch
     assert preferences == {"city": "London", "units": "metric"}
 
 
-async def test_unknown_tool_returns_not_found(db_session, monkeypatch):
+async def test_unknown_tool_returns_not_found(db_session, create_user, monkeypatch):
+    await create_user(db_session, "u1")
     rounds = [
         [_chunk(tool_calls=[_tool_call(0, id="c1", name="mystery", arguments="{}")])],
         [_chunk(content="Done.")],

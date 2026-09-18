@@ -5,7 +5,9 @@ from services.conversation_service import (
 )
 
 
-async def test_history_round_trips_in_order(db_session):
+async def test_history_round_trips_in_order(db_session, create_user):
+    await create_user(db_session, "u1")
+
     await ConversationService.append_message(db_session, "c1", "u1", "user", "hi")
     await ConversationService.append_message(
         db_session, "c1", "u1", "assistant", "hello"
@@ -18,7 +20,9 @@ async def test_history_round_trips_in_order(db_session):
     ]
 
 
-async def test_history_is_scoped_per_conversation(db_session):
+async def test_history_is_scoped_per_conversation(db_session, create_user):
+    await create_user(db_session, "u1")
+
     await ConversationService.append_message(db_session, "c1", "u1", "user", "one")
     await ConversationService.append_message(db_session, "c2", "u1", "user", "two")
 
@@ -30,7 +34,9 @@ async def test_history_is_scoped_per_conversation(db_session):
     ]
 
 
-async def test_history_trims_to_message_limit(db_session):
+async def test_history_trims_to_message_limit(db_session, create_user):
+    await create_user(db_session, "u1")
+
     for index in range(MAX_HISTORY_MESSAGES + 5):
         await ConversationService.append_message(
             db_session, "c1", "u1", "user", f"message-{index}"
@@ -41,7 +47,9 @@ async def test_history_trims_to_message_limit(db_session):
     assert history[-1]["content"] == f"message-{MAX_HISTORY_MESSAGES + 4}"
 
 
-async def test_history_trims_to_char_budget(db_session):
+async def test_history_trims_to_char_budget(db_session, create_user):
+    await create_user(db_session, "u1")
+
     for index in range(30):
         await ConversationService.append_message(
             db_session, "c1", "u1", "user", f"{index}-" + "x" * 400

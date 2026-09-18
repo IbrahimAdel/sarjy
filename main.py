@@ -142,9 +142,7 @@ async def _speak(
 
     output_rate = state.voice.sample_rate
     if tts.sample_rate != output_rate:
-        pcm = await asyncio.to_thread(
-            resample_pcm16, pcm, tts.sample_rate, output_rate
-        )
+        pcm = await asyncio.to_thread(resample_pcm16, pcm, tts.sample_rate, output_rate)
 
     if not state.speaking:
         state.speaking = True
@@ -243,9 +241,7 @@ async def _handle_text(
         if not text:
             await _send_json(websocket, state, error_message("Empty transcript."))
             return
-        turn = TurnMetrics(
-            user_id=state.user_id, conversation_id=state.conversation_id
-        )
+        turn = TurnMetrics(user_id=state.user_id, conversation_id=state.conversation_id)
         turn.mark("asr_end")
         await _start_response(websocket, state, tts, text, turn)
 
@@ -370,17 +366,13 @@ async def _handle_audio(
         fields = turn.fields()
         logger.exception("transcription_failed", extra={"fields": fields})
         metrics.record_turn(fields, error=True)
-        await _send_json(
-            websocket, state, error_message("Failed to transcribe audio.")
-        )
+        await _send_json(websocket, state, error_message("Failed to transcribe audio."))
         await _send_json(websocket, state, status_message(AssistantState.LISTENING))
         return
     turn.mark("asr_end")
 
     if not text:
-        logger.info(
-            "transcript_empty", extra={"fields": {"turn_id": turn.turn_id}}
-        )
+        logger.info("transcript_empty", extra={"fields": {"turn_id": turn.turn_id}})
         await _send_json(websocket, state, status_message(AssistantState.LISTENING))
         return
 
@@ -427,15 +419,15 @@ async def websocket_audio_endpoint(websocket: WebSocket) -> None:
             text = message.get("text")
             data = message.get("bytes")
             if text is not None:
+                assert isinstance(text, str)
                 await _handle_text(websocket, state, tts, text)
             elif data is not None:
+                assert isinstance(data, bytes)
                 await _handle_audio(
                     websocket, state, stt, tts, data, partial_interval_s
                 )
     except WebSocketDisconnect:
-        logger.info(
-            "connection_closed", extra={"fields": {"user_id": state.user_id}}
-        )
+        logger.info("connection_closed", extra={"fields": {"user_id": state.user_id}})
     finally:
         await _cancel_response(state)
         await state.session.close()

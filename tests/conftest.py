@@ -12,11 +12,12 @@ os.environ["LOG_LEVEL"] = "WARNING"
 os.environ["LOG_FORMAT"] = "text"
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import delete
 
-import models.message
-import models.preference  # noqa: F401
 from database import AsyncSessionLocal, Base, engine
+from models.message import ConversationMessage
+from models.preference import UserPreference
+from models.user import User
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -31,9 +32,21 @@ def _create_schema():
 
 
 @pytest.fixture
+def create_user():
+    async def _create(session, user_id: str) -> None:
+        session.add(
+            User(id=user_id, email=f"{user_id}@test.local", name=user_id)
+        )
+        await session.commit()
+
+    return _create
+
+
+@pytest.fixture
 async def db_session():
     async with AsyncSessionLocal() as session:
-        await session.execute(text("DELETE FROM user_preferences"))
-        await session.execute(text("DELETE FROM conversation_messages"))
+        await session.execute(delete(ConversationMessage))
+        await session.execute(delete(UserPreference))
+        await session.execute(delete(User))
         await session.commit()
         yield session

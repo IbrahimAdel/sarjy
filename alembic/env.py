@@ -11,11 +11,12 @@ from sqlalchemy import engine_from_config, pool
 
 import models.message
 import models.preference
+import models.user
 from alembic import context
 from database import Base
 
 # Importing the models registers their tables with Base.metadata for autogenerate.
-_ = (models.message, models.preference)
+_ = (models.message, models.preference, models.user)
 
 config = context.config
 
