@@ -1,0 +1,21 @@
+services:
+  sarjy:
+    build:
+      context: .
+    image: sarjy:latest
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: sqlite:////app/data/sarjy_memory.db
+      # Uncomment after mounting a Piper voice below:
+      # PIPER_VOICE_PATH: /app/data/piper/en_US-amy-medium.onnx
+    ports:
+      - "8000:8000"
+    volumes:
+      - sarjy-data:/app/data
+      # Optional: mount a local Piper voice model for TTS
+      # - ./models/piper:/app/data/piper:ro
+    restart: unless-stopped
+
+volumes:
+  sarjy-data:

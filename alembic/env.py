@@ -14,11 +14,15 @@ import models.preference
 import models.user
 from alembic import context
 from database import Base
+from settings import get_settings
 
 # Importing the models registers their tables with Base.metadata for autogenerate.
 _ = (models.message, models.preference, models.user)
 
 config = context.config
+
+# Let DATABASE_URL / settings drive migrations instead of the static alembic.ini.
+config.set_main_option("sqlalchemy.url", get_settings().database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
