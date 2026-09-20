@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="DataSourceManagerImpl" format="xml" multifile-model="true">
-    <data-source source="LOCAL" name="sarjy_memory" uuid="a5cf3715-83f5-49a2-9e38-3c6179c04060">
+    <data-source source="LOCAL" name="sarjy_memory" uuid="2ea88408-15dd-4577-971e-4874ac635a92">
       <driver-ref>sqlite.xerial</driver-ref>
       <synchronize>true</synchronize>
       <jdbc-driver>org.sqlite.JDBC</jdbc-driver>
-      <jdbc-url>jdbc:sqlite:$PROJECT_DIR$/sarjy_memory.db</jdbc-url>
+      <jdbc-url>jdbc:sqlite:$PROJECT_DIR$/backend/sarjy_memory.db</jdbc-url>
       <working-dir>$ProjectFileDir$</working-dir>
     </data-source>
   </component>

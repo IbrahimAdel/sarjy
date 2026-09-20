@@ -1,8 +1,8 @@
 services:
-  sarjy:
+  backend:
     build:
       context: ./backend
-    image: sarjy:latest
+    image: sarjy-backend:latest
     env_file:
       - ./backend/.env
     environment:
@@ -15,6 +15,18 @@ services:
       - sarjy-data:/app/data
       # Optional: mount a local Piper voice model for TTS
       # - ./models/piper:/app/data/piper:ro
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    image: sarjy-frontend:latest
+    environment:
+      VITE_PROXY_TARGET: http://backend:8000
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
     restart: unless-stopped
 
 volumes:
