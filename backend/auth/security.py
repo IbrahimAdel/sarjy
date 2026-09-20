@@ -82,11 +82,20 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
-def _create_token(subject: str, token_type: str, ttl_seconds: int) -> str:
+def _create_token(
+    subject: str,
+    token_type: str,
+    ttl_seconds: int,
+    *,
+    email: str,
+    name: str,
+) -> str:
     settings = get_settings()
     now = int(time.time())
     claims = {
         "sub": subject,
+        "email": email,
+        "name": name,
         "iss": settings.auth_issuer,
         "aud": settings.auth_audience,
         "iat": now,
@@ -97,19 +106,27 @@ def _create_token(subject: str, token_type: str, ttl_seconds: int) -> str:
     return jwt.encode({"alg": settings.auth_algorithm}, claims, get_signing_key())
 
 
-def create_access_token(subject: str) -> str:
+def create_access_token(subject: str, *, email: str, name: str) -> str:
     return _create_token(
-        subject, ACCESS_TOKEN_TYPE, get_settings().access_token_ttl_seconds
+        subject,
+        ACCESS_TOKEN_TYPE,
+        get_settings().access_token_ttl_seconds,
+        email=email,
+        name=name,
     )
 
 
-def create_refresh_token(subject: str) -> str:
+def create_refresh_token(subject: str, *, email: str, name: str) -> str:
     return _create_token(
-        subject, REFRESH_TOKEN_TYPE, get_settings().refresh_token_ttl_seconds
+        subject,
+        REFRESH_TOKEN_TYPE,
+        get_settings().refresh_token_ttl_seconds,
+        email=email,
+        name=name,
     )
 
 
-def decode_token(token: str, expected_type: str | None = None) -> str:
+def decode_claims(token: str, expected_type: str | None = None) -> dict[str, Any]:
     settings = get_settings()
     try:
         decoded = jwt.decode(
@@ -126,7 +143,12 @@ def decode_token(token: str, expected_type: str | None = None) -> str:
         msg = "Unexpected token type."
         raise AuthError(msg)
 
-    subject = decoded.claims.get("sub")
+    return dict(decoded.claims)
+
+
+def decode_token(token: str, expected_type: str | None = None) -> str:
+    claims = decode_claims(token, expected_type)
+    subject = claims.get("sub")
     if not isinstance(subject, str) or not subject:
         msg = "Token missing subject."
         raise AuthError(msg)

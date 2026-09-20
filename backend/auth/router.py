@@ -17,7 +17,7 @@ from auth.security import (
     AuthError,
     create_access_token,
     create_refresh_token,
-    decode_token,
+    decode_claims,
     hash_password,
     verify_password,
 )
@@ -30,12 +30,13 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 INVALID_CREDENTIALS = "Invalid credentials."
 EMAIL_TAKEN = "Email already registered."
+INVALID_REFRESH = "Invalid refresh token."
 
 
-def _issue_tokens(user_id: str) -> TokenResponse:
+def _issue_tokens(user_id: str, email: str, name: str) -> TokenResponse:
     return TokenResponse(
-        access_token=create_access_token(user_id),
-        refresh_token=create_refresh_token(user_id),
+        access_token=create_access_token(user_id, email=email, name=name),
+        refresh_token=create_refresh_token(user_id, email=email, name=name),
     )
 
 
@@ -76,15 +77,26 @@ async def login(
     user = result.scalar_one_or_none()
     if user is None or not verify_password(payload.password, user.password):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail=INVALID_CREDENTIALS)
-    return _issue_tokens(user.id)
+    return _issue_tokens(user.id, user.email, user.name)
 
 
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh(payload: RefreshRequest) -> TokenResponse:
     try:
-        user_id = decode_token(payload.refresh_token, REFRESH_TOKEN_TYPE)
+        claims = decode_claims(payload.refresh_token, REFRESH_TOKEN_TYPE)
     except AuthError as exc:
         raise HTTPException(
-            status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token."
+            status.HTTP_401_UNAUTHORIZED, detail=INVALID_REFRESH
         ) from exc
-    return _issue_tokens(user_id)
+
+    user_id = claims.get("sub")
+    email = claims.get("email")
+    name = claims.get("name")
+    if (
+        not isinstance(user_id, str)
+        or not isinstance(email, str)
+        or not isinstance(name, str)
+    ):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail=INVALID_REFRESH)
+
+    return _issue_tokens(user_id, email, name)

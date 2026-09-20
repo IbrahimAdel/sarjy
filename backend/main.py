@@ -6,10 +6,11 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth import load_public_jwks
+from auth import AuthError, authenticate, extract_token, load_public_jwks
 from auth.router import router as auth_router
 from database import AsyncSessionLocal
 from observability import TurnMetrics, configure_logging, metrics
@@ -63,6 +64,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Sarjy Voice Assistant", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=get_settings().cors_origins(),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(auth_router)
 
 
@@ -257,10 +265,6 @@ async def _handle_text(
         await _cancel_response(state)
         state.speaking = False
 
-        user_id = payload.get("user_id")
-        if user_id:
-            state.user_id = str(user_id)
-
         conversation_id = payload.get("conversation_id")
         if conversation_id:
             state.conversation_id = str(conversation_id)
@@ -395,13 +399,29 @@ async def _handle_audio(
 @app.websocket("/ws/audio")
 async def websocket_audio_endpoint(websocket: WebSocket) -> None:
     await websocket.accept()
+
+    token = extract_token(websocket)
+    if token is None:
+        await websocket.close(
+            code=status.WS_1008_POLICY_VIOLATION, reason="Unauthorized"
+        )
+        return
+
+    try:
+        user_id = authenticate(token)
+    except AuthError:
+        await websocket.close(
+            code=status.WS_1008_POLICY_VIOLATION, reason="Unauthorized"
+        )
+        return
+
     settings = app.state.settings
     stt: SpeechToText = app.state.stt
     tts: TextToSpeech = app.state.tts
     partial_interval_s = settings.partial_interval_ms / 1000
 
     state = ConnectionState(
-        user_id=websocket.query_params.get("user_id", "default_user"),
+        user_id=user_id,
         conversation_id=websocket.query_params.get("conversation_id") or gen_uuid(),
         session=AsyncSessionLocal(),
         voice=VoiceSession(sample_rate=settings.sample_rate),

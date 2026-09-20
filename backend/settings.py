@@ -36,8 +36,17 @@ class Settings(BaseSettings):
     access_token_ttl_seconds: int = Field(default=900)
     refresh_token_ttl_seconds: int = Field(default=604800)
 
+    frontend_origins: str = Field(default="http://localhost:5173")
+
     log_level: str = Field(default="INFO")
     log_format: str = Field(default="text")
+
+    def cors_origins(self) -> list[str]:
+        return [
+            origin.strip()
+            for origin in self.frontend_origins.split(",")
+            if origin.strip()
+        ]
 
     def require_openai_api_key(self) -> str:
         if not self.openai_api_key.strip():

@@ -1,7 +1,16 @@
+from typing import ClassVar
+
+import pytest
+from fastapi import WebSocketDisconnect
 from fastapi.testclient import TestClient
 
 import main
+from auth import create_access_token
 from services.voice.pipeline import AudioResult, SpeechSegment
+
+
+def _token(user_id: str = "u") -> str:
+    return create_access_token(user_id, email=f"{user_id}@test.local", name=user_id)
 
 
 class FakeLLM:
@@ -11,6 +20,16 @@ class FakeLLM:
     async def generate_response_stream(self, session, user_transcript):
         yield "Hello "
         yield "world."
+
+
+class RecordingLLM:
+    last: ClassVar[tuple[str, str] | None] = None
+
+    def __init__(self, user_id: str, conversation_id: str) -> None:
+        RecordingLLM.last = (user_id, conversation_id)
+
+    async def generate_response_stream(self, session, user_transcript):
+        yield "ok."
 
 
 class FakeSTT:
@@ -56,12 +75,48 @@ def _collect_until_idle(ws, limit: int = 100) -> list[dict]:
     return messages
 
 
-def test_text_turn_streams_response(monkeypatch):
-    monkeypatch.setattr(main, "LLMEngine", FakeLLM)
+def test_connection_requires_token():
+    with (
+        TestClient(main.app) as client,
+        client.websocket_connect("/ws/audio") as ws,
+        pytest.raises(WebSocketDisconnect),
+    ):
+        ws.receive_json()
+
+
+def test_invalid_token_is_rejected():
+    with (
+        TestClient(main.app) as client,
+        client.websocket_connect("/ws/audio?token=not-a-jwt") as ws,
+        pytest.raises(WebSocketDisconnect),
+    ):
+        ws.receive_json()
+
+
+def test_valid_token_derives_user_id(monkeypatch):
+    monkeypatch.setattr(main, "LLMEngine", RecordingLLM)
 
     with (
         TestClient(main.app) as client,
-        client.websocket_connect("/ws/audio?user_id=u") as ws,
+        client.websocket_connect(
+            f"/ws/audio?user_id=bob&token={_token('alice')}"
+        ) as ws,
+    ):
+        assert ws.receive_json()["state"] == "listening"
+        ws.send_json({"event": "user_transcript", "text": "hi"})
+        _collect_until_idle(ws)
+
+    assert RecordingLLM.last is not None
+    assert RecordingLLM.last[0] == "alice"
+
+
+def test_text_turn_streams_response(monkeypatch):
+    monkeypatch.setattr(main, "LLMEngine", FakeLLM)
+    token = _token()
+
+    with (
+        TestClient(main.app) as client,
+        client.websocket_connect(f"/ws/audio?token={token}") as ws,
     ):
         assert ws.receive_json()["state"] == "listening"
         ws.send_json({"event": "user_transcript", "text": "hi"})
@@ -77,7 +132,7 @@ def test_text_turn_streams_response(monkeypatch):
 def test_malformed_json_returns_error():
     with (
         TestClient(main.app) as client,
-        client.websocket_connect("/ws/audio") as ws,
+        client.websocket_connect(f"/ws/audio?token={_token()}") as ws,
     ):
         ws.receive_json()
         ws.send_text("{not json")
@@ -90,7 +145,7 @@ def test_malformed_json_returns_error():
 def test_unknown_event_returns_error():
     with (
         TestClient(main.app) as client,
-        client.websocket_connect("/ws/audio") as ws,
+        client.websocket_connect(f"/ws/audio?token={_token()}") as ws,
     ):
         ws.receive_json()
         ws.send_json({"event": "bogus"})
@@ -102,7 +157,7 @@ def test_unknown_event_returns_error():
 def test_empty_transcript_returns_error():
     with (
         TestClient(main.app) as client,
-        client.websocket_connect("/ws/audio") as ws,
+        client.websocket_connect(f"/ws/audio?token={_token()}") as ws,
     ):
         ws.receive_json()
         ws.send_json({"event": "user_transcript", "text": "  "})
@@ -114,7 +169,7 @@ def test_empty_transcript_returns_error():
 def test_start_and_stop_statuses():
     with (
         TestClient(main.app) as client,
-        client.websocket_connect("/ws/audio") as ws,
+        client.websocket_connect(f"/ws/audio?token={_token()}") as ws,
     ):
         ws.receive_json()
         ws.send_json({"event": "start"})
@@ -126,7 +181,7 @@ def test_start_and_stop_statuses():
 def test_invalid_sample_rate_returns_error():
     with (
         TestClient(main.app) as client,
-        client.websocket_connect("/ws/audio") as ws,
+        client.websocket_connect(f"/ws/audio?token={_token()}") as ws,
     ):
         ws.receive_json()
         ws.send_json({"event": "start", "sample_rate": 12345})
@@ -142,7 +197,7 @@ def test_audio_turn_transcribes_and_responds(monkeypatch):
 
     with TestClient(main.app) as client:
         main.app.state.stt = FakeSTT()
-        with client.websocket_connect("/ws/audio?user_id=u") as ws:
+        with client.websocket_connect(f"/ws/audio?token={_token()}") as ws:
             ws.receive_json()
             ws.send_bytes(b"\x01" * 960)
             messages = _collect_until_idle(ws)
