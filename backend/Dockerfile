@@ -25,6 +25,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 RUN --mount=type=cache,target=/root/.cache/uv \
     /app/.venv/bin/python -c "from faster_whisper import WhisperModel; WhisperModel('base.en', device='cpu', compute_type='int8')"
 
+# Bake the Piper voice model so TTS works without runtime downloads.
+ARG PIPER_VOICE=en_US-lessac-high
+RUN /app/.venv/bin/python -m piper.download_voices "${PIPER_VOICE}" --data-dir /opt/piper
+
 # ---------------------------------------------------------------------------
 # Runtime: slim image with only the built venv, model cache and app source.
 # ---------------------------------------------------------------------------
@@ -39,6 +43,7 @@ WORKDIR /app
 
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /opt/hf /opt/hf
+COPY --from=builder /opt/piper /app/data/piper
 COPY . .
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
