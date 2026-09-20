@@ -31,3 +31,27 @@ export interface ConversationEntry {
   role: EntryRole
   text: string
 }
+
+export interface Page<T> {
+  items: T[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface ConversationSummary {
+  id: string
+  message_count: number
+  last_message: string
+  last_message_role: EntryRole
+  created_at: string
+  updated_at: string
+}
+
+export interface ConversationMessage {
+  id: string
+  conversation_id: string
+  role: EntryRole
+  content: string
+  created_at: string
+}

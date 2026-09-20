@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react"
+import { useEffect, useRef, useState, type FormEvent } from "react"
 import { Loader2, Mic, MicOff, SendHorizontal } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -6,9 +6,18 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { StatusBadge } from "@/components/voice/StatusBadge"
 import { TranscriptList } from "@/components/voice/TranscriptList"
+import { useConversationTranscript } from "@/hooks/useConversationTranscript"
 import { useVoiceConversation } from "@/hooks/useVoiceConversation"
 
-export function VoiceConsole() {
+interface VoiceConsoleProps {
+  conversationId: string
+  onSessionEnd?: () => void
+}
+
+export function VoiceConsole({
+  conversationId,
+  onSessionEnd,
+}: VoiceConsoleProps) {
   const {
     phase,
     connected,
@@ -18,8 +27,18 @@ export function VoiceConsole() {
     start,
     stop,
     sendText,
-  } = useVoiceConversation()
+  } = useVoiceConversation(conversationId)
+  const transcript = useConversationTranscript(conversationId)
   const [draft, setDraft] = useState("")
+
+  const previouslyConnected = useRef(false)
+
+  useEffect(() => {
+    if (previouslyConnected.current && !connected) {
+      onSessionEnd?.()
+    }
+    previouslyConnected.current = connected
+  }, [connected, onSessionEnd])
 
   const isConnecting = phase === "connecting" && !connected
 
@@ -27,6 +46,7 @@ export function VoiceConsole() {
     if (connected) {
       stop()
     } else if (!isConnecting) {
+      void transcript.reload()
       start()
     }
   }
@@ -40,7 +60,7 @@ export function VoiceConsole() {
   }
 
   return (
-    <Card className="flex h-[calc(100vh-8rem)] flex-col">
+    <Card className="flex h-full min-h-0 flex-col">
       <CardHeader className="flex-row items-center justify-between gap-2 border-b">
         <div className="flex items-center gap-2">
           <StatusBadge state={assistantState} />
@@ -67,8 +87,27 @@ export function VoiceConsole() {
         </Button>
       </CardHeader>
 
-      <CardContent className="flex-1 overflow-y-auto py-4">
-        <TranscriptList entries={entries} partial={partial} />
+      <CardContent className="min-h-0 flex-1 overflow-y-auto py-4">
+        {transcript.hasMore ? (
+          <div className="mb-3 flex justify-center">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={transcript.loadEarlier}
+              disabled={transcript.loadingEarlier}
+            >
+              {transcript.loadingEarlier ? (
+                <Loader2 className="animate-spin" aria-hidden="true" />
+              ) : null}
+              Load earlier messages
+            </Button>
+          </div>
+        ) : null}
+        <TranscriptList
+          entries={[...transcript.entries, ...entries]}
+          partial={partial}
+        />
       </CardContent>
 
       <form

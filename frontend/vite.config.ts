@@ -8,6 +8,7 @@ const PROXY_TARGET = process.env.VITE_PROXY_TARGET ?? "http://localhost:8000"
 
 const proxy = {
   "/auth": PROXY_TARGET,
+  "/conversations": PROXY_TARGET,
   "/.well-known": PROXY_TARGET,
   "/metrics": PROXY_TARGET,
   "/ws": { target: PROXY_TARGET, ws: true },

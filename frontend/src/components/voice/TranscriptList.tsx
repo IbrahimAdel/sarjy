@@ -38,9 +38,45 @@ export function TranscriptList({
   partial: string
 }) {
   const endRef = useRef<HTMLDivElement>(null)
+  const firstIdRef = useRef<string | null>(null)
+  const lengthRef = useRef(0)
+  const signatureRef = useRef("")
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
+    const last = entries.at(-1)
+    const signature = [
+      entries.length,
+      entries[0]?.id ?? "",
+      last?.id ?? "",
+      last?.text.length ?? 0,
+      partial,
+    ].join("|")
+
+    // Ignore re-renders that do not change the transcript (e.g. the
+    // loadingEarlier flag toggling), otherwise they would scroll the view.
+    if (signature === signatureRef.current) {
+      return
+    }
+
+    const firstId = entries[0]?.id ?? null
+    const previousFirstId = firstIdRef.current
+    const previousLength = lengthRef.current
+    const prepended =
+      firstId !== null &&
+      previousFirstId !== null &&
+      firstId !== previousFirstId &&
+      entries.length > previousLength
+
+    signatureRef.current = signature
+    firstIdRef.current = firstId
+    lengthRef.current = entries.length
+
+    // Older messages were prepended; leave the viewport where it is so the
+    // user keeps their place. New messages still scroll to the bottom.
+    if (prepended) {
+      return
+    }
+    endRef.current?.scrollIntoView?.({ behavior: "smooth", block: "end" })
   }, [entries, partial])
 
   if (entries.length === 0 && !partial) {

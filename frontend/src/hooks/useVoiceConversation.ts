@@ -4,11 +4,10 @@ import { toast } from "sonner"
 import { useAuth } from "@/hooks/useAuth"
 import { useMicCapture } from "@/hooks/useMicCapture"
 import { usePcmPlayer } from "@/hooks/usePcmPlayer"
+import { resolveActiveConversationId } from "@/lib/conversation"
 import { wsUrl } from "@/lib/config"
 import { parseServerMessage } from "@/lib/voice"
 import type { AssistantState, ConversationEntry, EntryRole, VoicePhase } from "@/types"
-
-const CONVERSATION_STORAGE_KEY = "sarjy.conversation_id"
 
 let entryCounter = 0
 
@@ -17,20 +16,7 @@ function nextEntryId(): string {
   return `entry-${entryCounter}`
 }
 
-function resolveConversationId(): string {
-  const existing = window.localStorage.getItem(CONVERSATION_STORAGE_KEY)
-  if (existing) {
-    return existing
-  }
-  const created =
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `conv-${Date.now()}-${Math.random().toString(16).slice(2)}`
-  window.localStorage.setItem(CONVERSATION_STORAGE_KEY, created)
-  return created
-}
-
-export function useVoiceConversation() {
+export function useVoiceConversation(conversationId?: string) {
   const { refresh, ensureAccessToken } = useAuth()
   const mic = useMicCapture()
   const player = usePcmPlayer()
@@ -43,11 +29,22 @@ export function useVoiceConversation() {
 
   const socketRef = useRef<WebSocket | null>(null)
   const assistantEntryRef = useRef<string | null>(null)
+  const fallbackIdRef = useRef<string | null>(null)
   const connectRef = useRef<
     (allowRetry: boolean, forceRefresh?: boolean) => Promise<void>
   >(async () => undefined)
   const micRef = useRef(mic)
   const playerRef = useRef(player)
+
+  const resolveConversationId = useCallback((): string => {
+    if (conversationId) {
+      return conversationId
+    }
+    if (fallbackIdRef.current === null) {
+      fallbackIdRef.current = resolveActiveConversationId()
+    }
+    return fallbackIdRef.current
+  }, [conversationId])
 
   const appendEntry = useCallback((role: EntryRole, text: string) => {
     setEntries((previous) => [...previous, { id: nextEntryId(), role, text }])
@@ -78,6 +75,8 @@ export function useVoiceConversation() {
   const connect = useCallback(
     async (allowRetry: boolean, forceRefresh = false): Promise<void> => {
       setPhase("connecting")
+      assistantEntryRef.current = null
+      setEntries([])
 
       // Create and resume the audio contexts synchronously, while still inside
       // the click handler. Autoplay policies reject contexts resumed later.
@@ -102,12 +101,12 @@ export function useVoiceConversation() {
         new Promise((resolve) => setTimeout(resolve, 1500)),
       ])
 
-      const conversationId = resolveConversationId()
+      const activeId = resolveConversationId()
       let socket: WebSocket
       try {
         socket = new WebSocket(
           wsUrl(
-            `/ws/audio?token=${encodeURIComponent(token)}&conversation_id=${encodeURIComponent(conversationId)}`
+            `/ws/audio?token=${encodeURIComponent(token)}&conversation_id=${encodeURIComponent(activeId)}`
           )
         )
       } catch (error) {
@@ -154,7 +153,7 @@ export function useVoiceConversation() {
         setConnected(true)
         setPhase("live")
         socket.send(
-          JSON.stringify({ event: "start", conversation_id: conversationId })
+          JSON.stringify({ event: "start", conversation_id: activeId })
         )
         mic
           .start((frame) => {
@@ -191,6 +190,7 @@ export function useVoiceConversation() {
       mic,
       player,
       refresh,
+      resolveConversationId,
       teardown,
     ]
   )
@@ -198,6 +198,28 @@ export function useVoiceConversation() {
   useEffect(() => {
     connectRef.current = connect
   }, [connect])
+
+  // Switching the active conversation ends any live session and clears the
+  // transcript so history can be reloaded for the new conversation.
+  useEffect(() => {
+    const socket = socketRef.current
+    if (socket !== null) {
+      socketRef.current = null
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ event: "stop" }))
+      }
+      socket.close(1000)
+    }
+    micRef.current.stop()
+    playerRef.current.stop()
+    fallbackIdRef.current = null
+    assistantEntryRef.current = null
+    setConnected(false)
+    setAssistantState("idle")
+    setPartial("")
+    setPhase("idle")
+    setEntries([])
+  }, [conversationId])
 
   const start = useCallback(() => {
     const socket = socketRef.current

@@ -1,5 +1,12 @@
 import { apiUrl } from "@/lib/config"
-import type { AuthTokens, AuthUser, RegisterPayload } from "@/types"
+import type {
+  AuthTokens,
+  AuthUser,
+  ConversationMessage,
+  ConversationSummary,
+  Page,
+  RegisterPayload,
+} from "@/types"
 
 export class ApiError extends Error {
   readonly status: number
@@ -28,12 +35,18 @@ async function extractDetail(response: Response): Promise<string> {
   return response.statusText || `Request failed (${response.status})`
 }
 
-async function request<T>(path: string, init: RequestInit): Promise<T> {
+interface RequestOptions extends RequestInit {
+  token?: string
+}
+
+async function request<T>(path: string, init: RequestOptions = {}): Promise<T> {
+  const { token, ...rest } = init
   const response = await fetch(apiUrl(path), {
-    ...init,
+    ...rest,
     headers: {
       "content-type": "application/json",
-      ...init.headers,
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...rest.headers,
     },
   })
 
@@ -67,5 +80,41 @@ export const authApi = {
       method: "POST",
       body: JSON.stringify({ refresh_token: refreshToken }),
     })
+  },
+}
+
+export interface PaginationParams {
+  limit: number
+  offset: number
+}
+
+function paginationQuery({ limit, offset }: PaginationParams): string {
+  return new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  }).toString()
+}
+
+export const conversationsApi = {
+  list(
+    token: string,
+    params: PaginationParams
+  ): Promise<Page<ConversationSummary>> {
+    return request<Page<ConversationSummary>>(
+      `/conversations?${paginationQuery(params)}`,
+      { token }
+    )
+  },
+
+  messages(
+    token: string,
+    conversationId: string,
+    params: PaginationParams
+  ): Promise<Page<ConversationMessage>> {
+    const id = encodeURIComponent(conversationId)
+    return request<Page<ConversationMessage>>(
+      `/conversations/${id}/messages?${paginationQuery(params)}`,
+      { token }
+    )
   },
 }
