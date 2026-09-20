@@ -1,10 +1,10 @@
 services:
   sarjy:
     build:
-      context: .
+      context: ./backend
     image: sarjy:latest
     env_file:
-      - .env
+      - ./backend/.env
     environment:
       DATABASE_URL: sqlite:////app/data/sarjy_memory.db
       # Uncomment after mounting a Piper voice below:
