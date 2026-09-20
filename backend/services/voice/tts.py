@@ -3,6 +3,9 @@ import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
 
+import numpy as np
+from kokoro_onnx import Kokoro
+from kokoro_onnx.config import SAMPLE_RATE as KOKORO_SAMPLE_RATE
 from piper import PiperVoice
 
 from settings import Settings
@@ -11,7 +14,7 @@ logger = logging.getLogger("sarjy.tts")
 
 
 class TextToSpeech(ABC):
-    """Text-to-speech backend. Wired to Piper."""
+    """Text-to-speech backend (Piper or Kokoro, selected via configuration)."""
 
     @property
     def available(self) -> bool:
@@ -63,11 +66,43 @@ class PiperTextToSpeech(TextToSpeech):
         )
 
 
-def load_text_to_speech(settings: Settings) -> TextToSpeech:
-    if not settings.tts_enabled:
-        logger.info("TTS disabled via configuration.")
-        return NullTextToSpeech()
+class KokoroTextToSpeech(TextToSpeech):
+    """Local neural TTS backed by Kokoro (ONNX Runtime)."""
 
+    def __init__(
+        self,
+        kokoro: Kokoro,
+        *,
+        voice: str,
+        speed: float = 1.0,
+        lang: str = "en-us",
+    ) -> None:
+        self._kokoro = kokoro
+        self._voice = voice
+        self._speed = speed
+        self._lang = lang
+
+    @property
+    def sample_rate(self) -> int:
+        return int(KOKORO_SAMPLE_RATE)
+
+    async def synthesize(self, text: str) -> bytes:
+        if not text.strip():
+            return b""
+        return await asyncio.to_thread(self._synthesize_sync, text)
+
+    def _synthesize_sync(self, text: str) -> bytes:
+        samples, _ = self._kokoro.create(
+            text,
+            voice=self._voice,
+            speed=self._speed,
+            lang=self._lang,
+        )
+        pcm = np.clip(samples, -1.0, 1.0)
+        return (pcm * 32767.0).astype(np.int16).tobytes()
+
+
+def _load_piper(settings: Settings) -> TextToSpeech:
     path = Path(settings.piper_voice_path) if settings.piper_voice_path else None
     if path is None or not path.exists():
         logger.info("No Piper voice configured; TTS disabled.")
@@ -85,3 +120,49 @@ def load_text_to_speech(settings: Settings) -> TextToSpeech:
         voice.config.sample_rate,
     )
     return PiperTextToSpeech(voice)
+
+
+def _load_kokoro(settings: Settings) -> TextToSpeech:
+    model_path = Path(settings.kokoro_model_path)
+    voices_path = Path(settings.kokoro_voices_path)
+    if not model_path.exists() or not voices_path.exists():
+        logger.info(
+            "No Kokoro model configured at %s / %s; TTS disabled.",
+            model_path,
+            voices_path,
+        )
+        return NullTextToSpeech()
+
+    try:
+        kokoro = Kokoro(str(model_path), str(voices_path))
+    except Exception:
+        logger.exception("Failed to load Kokoro model %r; TTS disabled.", model_path)
+        return NullTextToSpeech()
+
+    logger.info(
+        "Loaded Kokoro voice %s (sample_rate=%d, speed=%.2f).",
+        settings.kokoro_voice,
+        KOKORO_SAMPLE_RATE,
+        settings.kokoro_speed,
+    )
+    return KokoroTextToSpeech(
+        kokoro,
+        voice=settings.kokoro_voice,
+        speed=settings.kokoro_speed,
+        lang=settings.kokoro_lang,
+    )
+
+
+def load_text_to_speech(settings: Settings) -> TextToSpeech:
+    if not settings.tts_enabled:
+        logger.info("TTS disabled via configuration.")
+        return NullTextToSpeech()
+
+    provider = settings.tts_provider.strip().lower()
+    if provider == "kokoro":
+        return _load_kokoro(settings)
+    if provider == "piper":
+        return _load_piper(settings)
+
+    logger.warning("Unknown TTS provider %r; TTS disabled.", settings.tts_provider)
+    return NullTextToSpeech()

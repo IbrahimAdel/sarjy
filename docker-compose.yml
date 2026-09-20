@@ -7,8 +7,9 @@ services:
       - ./backend/.env
     environment:
       DATABASE_URL: sqlite:////app/data/sarjy_memory.db
-      # The Piper voice is baked into the image at /app/data/piper. On first
-      # start it is seeded from the image into the named volume below.
+      # TTS models (Piper + Kokoro) are baked into the image under
+      # /app/data. On first start they are seeded from the image into the
+      # named volume below.
     ports:
       - "8000:8000"
     volumes:

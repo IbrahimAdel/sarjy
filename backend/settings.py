@@ -24,8 +24,15 @@ class Settings(BaseSettings):
     partial_interval_ms: int = Field(default=600)
 
     tts_enabled: bool = Field(default=True)
+    tts_provider: str = Field(default="piper")
     piper_voice_path: str = Field(default="")
     piper_use_cuda: bool = Field(default=False)
+
+    kokoro_model_path: str = Field(default="data/kokoro/kokoro-v1.0.onnx")
+    kokoro_voices_path: str = Field(default="data/kokoro/voices-v1.0.bin")
+    kokoro_voice: str = Field(default="af_heart")
+    kokoro_speed: float = Field(default=1.0)
+    kokoro_lang: str = Field(default="en-us")
 
     sample_rate: int = Field(default=16000)
 

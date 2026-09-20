@@ -14,6 +14,7 @@ from services.voice.stt import (
     load_speech_to_text,
 )
 from services.voice.tts import (
+    KokoroTextToSpeech,
     NullTextToSpeech,
     PiperTextToSpeech,
     TextToSpeech,
@@ -28,6 +29,7 @@ __all__ = [
     "EndpointDetector",
     "EndpointEvent",
     "FasterWhisperSTT",
+    "KokoroTextToSpeech",
     "NullSpeechToText",
     "NullTextToSpeech",
     "PiperTextToSpeech",

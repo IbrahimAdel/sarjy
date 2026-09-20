@@ -29,6 +29,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 ARG PIPER_VOICE=en_US-lessac-high
 RUN /app/.venv/bin/python -m piper.download_voices "${PIPER_VOICE}" --data-dir /opt/piper
 
+# Bake the Kokoro voice models so TTS works without runtime downloads.
+ARG KOKORO_MODEL_URL=https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx
+ARG KOKORO_VOICES_URL=https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
+RUN /app/.venv/bin/python -c "import os, urllib.request as u; os.makedirs('/opt/kokoro', exist_ok=True); u.urlretrieve(os.environ['KOKORO_MODEL_URL'], '/opt/kokoro/kokoro-v1.0.onnx'); u.urlretrieve(os.environ['KOKORO_VOICES_URL'], '/opt/kokoro/voices-v1.0.bin')"
+
 # ---------------------------------------------------------------------------
 # Runtime: slim image with only the built venv, model cache and app source.
 # ---------------------------------------------------------------------------
@@ -44,6 +49,7 @@ WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /opt/hf /opt/hf
 COPY --from=builder /opt/piper /app/data/piper
+COPY --from=builder /opt/kokoro /app/data/kokoro
 COPY . .
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
