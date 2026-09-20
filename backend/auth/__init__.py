@@ -1,5 +1,10 @@
 from typing import Any
 
+from auth.dependencies import (
+    AuthenticatedUser,
+    CurrentUserDep,
+    get_current_user,
+)
 from auth.security import (
     AuthError,
     authenticate,
@@ -15,6 +20,8 @@ from auth.security import (
 
 __all__ = [
     "AuthError",
+    "AuthenticatedUser",
+    "CurrentUserDep",
     "authenticate",
     "build_jwks",
     "create_access_token",
@@ -22,6 +29,7 @@ __all__ = [
     "decode_claims",
     "decode_token",
     "extract_token",
+    "get_current_user",
     "hash_password",
     "load_public_jwks",
     "verify_password",

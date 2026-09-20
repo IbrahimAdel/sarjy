@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth import AuthError, authenticate, extract_token, load_public_jwks
 from auth.router import router as auth_router
+from conversations.router import router as conversations_router
 from database import AsyncSessionLocal
 from observability import TurnMetrics, configure_logging, metrics
 from services.llm_service import LLMEngine
@@ -72,6 +73,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(auth_router)
+app.include_router(conversations_router)
 
 
 @dataclass
