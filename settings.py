@@ -29,6 +29,13 @@ class Settings(BaseSettings):
 
     sample_rate: int = Field(default=16000)
 
+    auth_issuer: str = Field(default="sarjy")
+    auth_audience: str = Field(default="sarjy-api")
+    auth_algorithm: str = Field(default="RS256")
+    auth_jwks_path: str = Field(default="auth/jwks.json")
+    access_token_ttl_seconds: int = Field(default=900)
+    refresh_token_ttl_seconds: int = Field(default=604800)
+
     log_level: str = Field(default="INFO")
     log_format: str = Field(default="text")
 

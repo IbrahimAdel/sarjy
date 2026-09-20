@@ -9,6 +9,8 @@ from typing import Any
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from auth import load_public_jwks
+from auth.router import router as auth_router
 from database import AsyncSessionLocal
 from observability import TurnMetrics, configure_logging, metrics
 from services.llm_service import LLMEngine
@@ -61,6 +63,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Sarjy Voice Assistant", lifespan=lifespan)
+app.include_router(auth_router)
 
 
 @dataclass
@@ -78,6 +81,11 @@ class ConnectionState:
 @app.get("/")
 async def root() -> dict[str, str]:
     return {"message": "Sarjy API running"}
+
+
+@app.get("/.well-known/jwks.json")
+async def jwks_endpoint() -> dict[str, Any]:
+    return load_public_jwks()
 
 
 @app.get("/metrics")

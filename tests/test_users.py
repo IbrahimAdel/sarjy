@@ -2,11 +2,14 @@ import pytest
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 
+from auth.security import hash_password
 from models.message import ConversationMessage
 from models.preference import UserPreference
 from models.user import User
 from services.conversation_service import ConversationService
 from services.memory_service import MemoryService
+
+TEST_PASSWORD_HASH = hash_password("password123")
 
 
 async def _count(db_session, model, *criteria) -> int:
@@ -46,11 +49,25 @@ async def test_deleting_user_cascades_to_children(db_session, create_user):
 
 
 async def test_email_is_unique(db_session):
-    db_session.add(User(id="a", email="dup@example.com", name="A"))
+    db_session.add(
+        User(
+            id="a",
+            email="dup@example.com",
+            name="A",
+            password=TEST_PASSWORD_HASH,
+        )
+    )
     await db_session.commit()
 
     with pytest.raises(IntegrityError):
-        db_session.add(User(id="b", email="dup@example.com", name="B"))
+        db_session.add(
+            User(
+                id="b",
+                email="dup@example.com",
+                name="B",
+                password=TEST_PASSWORD_HASH,
+            )
+        )
         await db_session.commit()
     await db_session.rollback()
 

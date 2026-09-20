@@ -14,10 +14,13 @@ os.environ["LOG_FORMAT"] = "text"
 import pytest
 from sqlalchemy import delete
 
+from auth.security import hash_password
 from database import AsyncSessionLocal, Base, engine
 from models.message import ConversationMessage
 from models.preference import UserPreference
 from models.user import User
+
+TEST_PASSWORD_HASH = hash_password("password123")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -35,7 +38,12 @@ def _create_schema():
 def create_user():
     async def _create(session, user_id: str) -> None:
         session.add(
-            User(id=user_id, email=f"{user_id}@test.local", name=user_id)
+            User(
+                id=user_id,
+                email=f"{user_id}@test.local",
+                name=user_id,
+                password=TEST_PASSWORD_HASH,
+            )
         )
         await session.commit()
 
