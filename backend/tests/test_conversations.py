@@ -72,7 +72,9 @@ async def test_list_conversations_aggregates_and_orders(db_session, create_user)
 
     assert total == 2
     assert items[0]["id"] == "c2"
+    assert items[0]["name"] == "other"
     c1 = next(item for item in items if item["id"] == "c1")
+    assert c1["name"] == "first"
     assert c1["message_count"] == 2
     assert c1["last_message"] == "second"
     assert c1["last_message_role"] == "assistant"

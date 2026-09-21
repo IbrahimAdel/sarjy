@@ -53,7 +53,9 @@ async def list_messages(
         limit=limit,
         offset=offset,
     )
-    if total == 0:
+    if not await ConversationService.conversation_exists(
+        session, conversation_id, current_user.user_id
+    ):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=CONVERSATION_NOT_FOUND)
 
     return Page[MessageResponse](

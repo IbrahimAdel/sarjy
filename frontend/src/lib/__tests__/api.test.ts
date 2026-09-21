@@ -53,6 +53,7 @@ describe("conversationsApi", () => {
         items: [
           {
             id: "c1",
+            name: "Greeting",
             message_count: 2,
             last_message: "hello",
             last_message_role: "assistant",

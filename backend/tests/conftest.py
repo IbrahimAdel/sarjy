@@ -16,6 +16,7 @@ from sqlalchemy import delete
 
 from auth.security import hash_password
 from database import AsyncSessionLocal, Base, engine
+from models.conversation import Conversation
 from models.message import ConversationMessage
 from models.preference import UserPreference
 from models.user import User
@@ -54,6 +55,7 @@ def create_user():
 async def db_session():
     async with AsyncSessionLocal() as session:
         await session.execute(delete(ConversationMessage))
+        await session.execute(delete(Conversation))
         await session.execute(delete(UserPreference))
         await session.execute(delete(User))
         await session.commit()

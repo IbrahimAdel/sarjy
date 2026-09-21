@@ -21,6 +21,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 function summary(id: string) {
   return {
     id,
+    name: `name-${id}`,
     message_count: 1,
     last_message: `msg-${id}`,
     last_message_role: "user" as const,

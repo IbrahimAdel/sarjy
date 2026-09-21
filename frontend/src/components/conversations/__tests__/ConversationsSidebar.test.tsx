@@ -6,6 +6,7 @@ import type { ConversationSummary } from "@/types"
 
 const summary: ConversationSummary = {
   id: "c1",
+  name: "Trip planning",
   message_count: 2,
   last_message: "hello there",
   last_message_role: "assistant",
@@ -39,6 +40,7 @@ describe("ConversationsSidebar", () => {
   it("renders conversations and reports selection", () => {
     const props = renderSidebar()
 
+    expect(screen.getByText("Trip planning")).toBeInTheDocument()
     expect(screen.getByText("hello there")).toBeInTheDocument()
     fireEvent.click(screen.getByText("hello there"))
 

@@ -12,6 +12,7 @@ class Page[T](BaseModel):
 
 class ConversationSummary(BaseModel):
     id: str
+    name: str
     message_count: int
     last_message: str
     last_message_role: str

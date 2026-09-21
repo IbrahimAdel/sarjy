@@ -1,8 +1,43 @@
 from services.conversation_service import (
+    DEFAULT_CONVERSATION_NAME,
     MAX_HISTORY_CHARS,
     MAX_HISTORY_MESSAGES,
+    MAX_NAME_CHARS,
     ConversationService,
 )
+
+
+async def test_append_message_creates_named_conversation(db_session, create_user):
+    await create_user(db_session, "u1")
+
+    await ConversationService.append_message(
+        db_session, "c1", "u1", "user", "  Plan   my trip  "
+    )
+
+    assert await ConversationService.conversation_exists(db_session, "c1", "u1")
+    items, total = await ConversationService.list_conversations(
+        db_session, "u1", limit=10, offset=0
+    )
+    assert total == 1
+    assert items[0]["name"] == "Plan my trip"
+
+
+async def test_conversation_name_truncates_and_falls_back(db_session, create_user):
+    await create_user(db_session, "u1")
+
+    await ConversationService.append_message(
+        db_session, "c1", "u1", "user", "x" * (MAX_NAME_CHARS + 20)
+    )
+    await ConversationService.append_message(
+        db_session, "c2", "u1", "assistant", "hello"
+    )
+
+    items, _ = await ConversationService.list_conversations(
+        db_session, "u1", limit=10, offset=0
+    )
+    names = {item["id"]: item["name"] for item in items}
+    assert names["c1"] == "x" * MAX_NAME_CHARS
+    assert names["c2"] == DEFAULT_CONVERSATION_NAME
 
 
 async def test_history_round_trips_in_order(db_session, create_user):

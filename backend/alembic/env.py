@@ -9,6 +9,7 @@ from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
 
+import models.conversation
 import models.message
 import models.preference
 import models.user
@@ -17,7 +18,7 @@ from database import Base
 from settings import get_settings
 
 # Importing the models registers their tables with Base.metadata for autogenerate.
-_ = (models.message, models.preference, models.user)
+_ = (models.conversation, models.message, models.preference, models.user)
 
 config = context.config
 

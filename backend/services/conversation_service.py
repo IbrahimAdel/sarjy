@@ -3,10 +3,20 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from models.conversation import Conversation
 from models.message import ConversationMessage
 
 MAX_HISTORY_MESSAGES = 20
 MAX_HISTORY_CHARS = 6000
+MAX_NAME_CHARS = 60
+DEFAULT_CONVERSATION_NAME = "New conversation"
+
+
+def _derive_name(content: str) -> str:
+    name = " ".join(content.split()).strip()
+    if not name:
+        return DEFAULT_CONVERSATION_NAME
+    return name[:MAX_NAME_CHARS].rstrip()
 
 
 class ConversationService:
@@ -22,6 +32,13 @@ class ConversationService:
         role: str,
         content: str,
     ) -> None:
+        conversation = await session.get(Conversation, conversation_id)
+        if conversation is None:
+            name = (
+                _derive_name(content) if role == "user" else DEFAULT_CONVERSATION_NAME
+            )
+            session.add(Conversation(id=conversation_id, user_id=user_id, name=name))
+
         session.add(
             ConversationMessage(
                 conversation_id=conversation_id,
@@ -31,6 +48,20 @@ class ConversationService:
             )
         )
         await session.commit()
+
+    @staticmethod
+    async def conversation_exists(
+        session: AsyncSession,
+        conversation_id: str,
+        user_id: str,
+    ) -> bool:
+        result = await session.execute(
+            select(Conversation.id).where(
+                Conversation.id == conversation_id,
+                Conversation.user_id == user_id,
+            )
+        )
+        return result.first() is not None
 
     @staticmethod
     async def get_history(
@@ -72,48 +103,49 @@ class ConversationService:
     ) -> tuple[list[dict[str, Any]], int]:
         """Conversations for a user, most recently updated first.
 
-        A conversation is derived from its messages; the row carries the
-        latest message plus aggregate count and timestamps.
+        Each row carries the conversation name plus its latest message and
+        aggregate count derived from the linked messages.
         """
-        ranked = (
-            select(
-                ConversationMessage.conversation_id.label("id"),
-                ConversationMessage.content.label("last_message"),
-                ConversationMessage.role.label("last_message_role"),
-                ConversationMessage.created_at.label("updated_at"),
-                func.count()
-                .over(partition_by=ConversationMessage.conversation_id)
-                .label("message_count"),
-                func.min(ConversationMessage.created_at)
-                .over(partition_by=ConversationMessage.conversation_id)
-                .label("created_at"),
-                func.row_number()
-                .over(
-                    partition_by=ConversationMessage.conversation_id,
-                    order_by=(
-                        ConversationMessage.created_at.desc(),
-                        ConversationMessage.id.desc(),
-                    ),
-                )
-                .label("rank"),
+        ranked = select(
+            ConversationMessage.conversation_id.label("id"),
+            ConversationMessage.content.label("last_message"),
+            ConversationMessage.role.label("last_message_role"),
+            ConversationMessage.created_at.label("updated_at"),
+            func.count()
+            .over(partition_by=ConversationMessage.conversation_id)
+            .label("message_count"),
+            func.min(ConversationMessage.created_at)
+            .over(partition_by=ConversationMessage.conversation_id)
+            .label("created_at"),
+            func.row_number()
+            .over(
+                partition_by=ConversationMessage.conversation_id,
+                order_by=(
+                    ConversationMessage.created_at.desc(),
+                    ConversationMessage.id.desc(),
+                ),
             )
-            .where(ConversationMessage.user_id == user_id)
-            .subquery()
-        )
+            .label("rank"),
+        ).subquery()
 
         rows = (
             (
                 await session.execute(
                     select(
-                        ranked.c.id,
+                        Conversation.id,
+                        Conversation.name,
                         ranked.c.message_count,
                         ranked.c.last_message,
                         ranked.c.last_message_role,
                         ranked.c.created_at,
                         ranked.c.updated_at,
                     )
-                    .where(ranked.c.rank == 1)
-                    .order_by(ranked.c.updated_at.desc(), ranked.c.id.desc())
+                    .join(ranked, ranked.c.id == Conversation.id)
+                    .where(
+                        Conversation.user_id == user_id,
+                        ranked.c.rank == 1,
+                    )
+                    .order_by(ranked.c.updated_at.desc(), Conversation.id.desc())
                     .limit(limit)
                     .offset(offset)
                 )
@@ -124,9 +156,9 @@ class ConversationService:
 
         total = (
             await session.execute(
-                select(
-                    func.count(func.distinct(ConversationMessage.conversation_id))
-                ).where(ConversationMessage.user_id == user_id)
+                select(func.count())
+                .select_from(Conversation)
+                .where(Conversation.user_id == user_id)
             )
         ).scalar_one()
 

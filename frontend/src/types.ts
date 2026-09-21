@@ -41,6 +41,7 @@ export interface Page<T> {
 
 export interface ConversationSummary {
   id: string
+  name: string
   message_count: number
   last_message: string
   last_message_role: EntryRole
