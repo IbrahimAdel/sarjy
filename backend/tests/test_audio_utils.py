@@ -13,9 +13,7 @@ from services.voice.audio import (
 def test_pcm16_float32_round_trip():
     samples = np.array([0, 1000, -1000, 32767, -32768], dtype=np.int16)
     restored = float32_to_pcm16(pcm16_to_float32(samples.tobytes()))
-    np.testing.assert_allclose(
-        np.frombuffer(restored, dtype=np.int16), samples, atol=1
-    )
+    np.testing.assert_allclose(np.frombuffer(restored, dtype=np.int16), samples, atol=1)
 
 
 def test_float32_to_pcm16_clips_out_of_range():

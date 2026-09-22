@@ -44,9 +44,7 @@ def status_message(state: AssistantState) -> StatusMessage:
 
 
 def transcript_message(text: str, *, final: bool) -> TranscriptMessage:
-    event = (
-        ServerEvent.TRANSCRIPT_FINAL if final else ServerEvent.TRANSCRIPT_PARTIAL
-    )
+    event = ServerEvent.TRANSCRIPT_FINAL if final else ServerEvent.TRANSCRIPT_PARTIAL
     return {"event": event, "text": text}
 
 

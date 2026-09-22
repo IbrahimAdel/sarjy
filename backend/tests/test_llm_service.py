@@ -56,7 +56,9 @@ def test_parse_tool_arguments(raw, expected):
     assert _parse_tool_arguments(raw) == expected
 
 
-async def test_direct_response_streams_and_persists(db_session, create_user, monkeypatch):
+async def test_direct_response_streams_and_persists(
+    db_session, create_user, monkeypatch
+):
     await create_user(db_session, "u1")
     client = _FakeClient([[_chunk(content="Hello "), _chunk(content="there.")]])
     monkeypatch.setattr(llm_service, "get_openai_client", lambda: client)
@@ -107,7 +109,9 @@ async def test_tool_loop_runs_concurrently_and_continues(
     assert collected == "It is sunny."
     assert len(client.chat.completions.calls) == 2
 
-    roles = [message["role"] for message in client.chat.completions.calls[1]["messages"]]
+    roles = [
+        message["role"] for message in client.chat.completions.calls[1]["messages"]
+    ]
     assert roles == ["system", "user", "assistant", "tool", "tool"]
 
     preferences = await MemoryService.get_user_preferences(db_session, "u1")

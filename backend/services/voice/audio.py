@@ -15,9 +15,7 @@ def pcm16_to_float32(pcm: bytes) -> np.ndarray:
     return samples.astype(np.float32) / 32768.0
 
 
-def resample_float32(
-    samples: np.ndarray, src_rate: int, dst_rate: int
-) -> np.ndarray:
+def resample_float32(samples: np.ndarray, src_rate: int, dst_rate: int) -> np.ndarray:
     """Linear-interpolation resampler, sufficient as STT model input."""
     if src_rate == dst_rate or samples.size == 0:
         return samples

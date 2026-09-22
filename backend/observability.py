@@ -97,9 +97,7 @@ class TurnMetrics:
             "user_id": self.user_id,
             "conversation_id": self.conversation_id,
             "asr_ms": self._between_ms("asr_start", "asr_end"),
-            "llm_first_token_ms": self._between_ms(
-                "llm_start", "llm_first_token"
-            ),
+            "llm_first_token_ms": self._between_ms("llm_start", "llm_first_token"),
             "first_audio_ms": self._since_start_ms("tts_first_audio"),
             "total_ms": self._since_start_ms("done"),
         }

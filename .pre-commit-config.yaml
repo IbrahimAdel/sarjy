@@ -1,0 +1,37 @@
+files: ^backend/
+exclude: ^backend/auth/jwks\.json$
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+      - id: mixed-line-ending
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.8
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: "0.11.8"
+    hooks:
+      - id: uv-lock
+        files: ^backend/pyproject\.toml$
+        args: [--project, backend]
+
+  - repo: local
+    hooks:
+      - id: basedpyright
+        name: basedpyright (backend)
+        entry: uv run --directory backend basedpyright
+        language: system
+        files: ^backend/.*\.py$
+        pass_filenames: false

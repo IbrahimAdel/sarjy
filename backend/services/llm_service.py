@@ -86,9 +86,7 @@ class LLMEngine:
             "user",
             user_transcript,
         )
-        history = await ConversationService.get_history(
-            session, self.conversation_id
-        )
+        history = await ConversationService.get_history(session, self.conversation_id)
         preferences = await MemoryService.get_user_preferences(session, self.user_id)
 
         system_prompt = (
