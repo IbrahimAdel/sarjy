@@ -6,7 +6,7 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      DATABASE_URL: sqlite:////app/data/sarjy_memory.db
+      DATABASE_URL: sqlite:///./data/sarjy_memory.db
       # TTS models (Piper + Kokoro) are baked into the image under
       # /app/data. On first start they are seeded from the image into the
       # named volume below.

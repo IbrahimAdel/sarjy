@@ -1,6 +1,8 @@
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 from sqlalchemy import event
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -18,7 +20,18 @@ def _async_database_url(url: str) -> str:
     return url
 
 
+def _ensure_sqlite_directory(url: str) -> None:
+    """SQLite does not create missing parent directories for file databases."""
+    if not url.startswith("sqlite"):
+        return
+    database = make_url(_async_database_url(url)).database
+    if not database or database == ":memory:":
+        return
+    Path(database).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
+
+
 DATABASE_URL = _async_database_url(get_settings().database_url)
+_ensure_sqlite_directory(get_settings().database_url)
 
 engine = create_async_engine(
     DATABASE_URL,

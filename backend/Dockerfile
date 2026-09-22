@@ -58,7 +58,7 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     HF_HOME=/opt/hf \
-    DATABASE_URL="sqlite:////app/data/sarjy_memory.db"
+    DATABASE_URL="sqlite:///./data/sarjy_memory.db"
 
 RUN useradd --create-home --uid 1000 appuser \
     && mkdir -p /app/data \

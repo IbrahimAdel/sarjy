@@ -37,7 +37,7 @@ resource "digitalocean_app" "sarjy" {
 
       env {
         key   = "DATABASE_URL"
-        value = "sqlite:////app/data/sarjy_memory.db"
+        value = "sqlite:///./data/sarjy_memory.db"
       }
 
       env {

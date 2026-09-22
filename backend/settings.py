@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     openai_api_key: str = Field(default="")
     openai_model: str = Field(default="gpt-4o-mini")
 
-    database_url: str = Field(default="sqlite:///./sarjy_memory.db")
+    database_url: str = Field(default="sqlite:///./data/sarjy_memory.db")
 
     stt_enabled: bool = Field(default=True)
     whisper_model: str = Field(default="base.en")
