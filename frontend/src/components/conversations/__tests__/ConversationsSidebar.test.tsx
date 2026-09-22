@@ -41,8 +41,8 @@ describe("ConversationsSidebar", () => {
     const props = renderSidebar()
 
     expect(screen.getByText("Trip planning")).toBeInTheDocument()
-    expect(screen.getByText("hello there")).toBeInTheDocument()
-    fireEvent.click(screen.getByText("hello there"))
+    expect(screen.queryByText("hello there")).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText("Trip planning"))
 
     expect(props.onSelect).toHaveBeenCalledWith("c1")
   })

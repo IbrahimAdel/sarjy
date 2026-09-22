@@ -42,9 +42,6 @@ function ConversationRow({
       )}
     >
       <span className="truncate text-sm font-medium">{conversation.name}</span>
-      <span className="truncate text-xs text-muted-foreground">
-        {conversation.last_message}
-      </span>
       <span className="flex items-center gap-2 text-xs text-muted-foreground">
         <Badge variant="secondary" className="capitalize">
           {conversation.last_message_role}
