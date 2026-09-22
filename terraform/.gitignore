@@ -1,0 +1,22 @@
+# Terraform working directory
+.terraform/
+
+# State may contain secrets
+*.tfstate
+*.tfstate.*
+
+# Variable files with secrets
+*.tfvars
+!*.tfvars.example
+
+# Crash logs and overrides
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# CLI config
+.terraformrc
+terraform.rc

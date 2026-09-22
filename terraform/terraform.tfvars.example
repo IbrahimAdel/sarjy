@@ -1,0 +1,28 @@
+# Copy to terraform.tfvars (do NOT commit) or pass values via TF_VAR_* env vars.
+#
+# Recommended for secrets:
+#   export DIGITALOCEAN_TOKEN="dop_v1_..."
+#   export TF_VAR_openai_api_key="sk-..."
+
+app_name       = "sarjy"
+region         = "nyc"
+github_repo    = "IbrahimAdel/sarjy"
+branch         = "master"
+deploy_on_push = true
+
+project_name        = "sarjy"
+project_environment = "Production"
+
+openai_model = "gpt-4o-mini"
+
+backend_instance_size_slug = "apps-s-1vcpu-2gb"
+backend_instance_count     = 1
+
+stt_enabled   = true
+tts_enabled   = true
+tts_provider  = "piper"
+whisper_model = "base.en"
+log_level     = "INFO"
+log_format    = "json"
+
+# do_token and openai_api_key are intentionally omitted; set them via env vars.

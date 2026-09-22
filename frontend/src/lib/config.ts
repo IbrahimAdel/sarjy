@@ -13,8 +13,9 @@ export function wsUrl(path: string): string {
     return `${WS_BASE}${path}`
   }
 
-  const origin = API_BASE || window.location.origin
-  const parsed = new URL(origin)
+  const base = API_BASE || window.location.origin
+  const parsed = new URL(base, window.location.origin)
   const protocol = parsed.protocol === "https:" ? "wss:" : "ws:"
-  return `${protocol}//${parsed.host}${path}`
+  const pathPrefix = parsed.pathname.replace(/\/$/, "")
+  return `${protocol}//${parsed.host}${pathPrefix}${path}`
 }
