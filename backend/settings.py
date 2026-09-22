@@ -25,7 +25,7 @@ class Settings(BaseSettings):
 
     tts_enabled: bool = Field(default=True)
     tts_provider: str = Field(default="piper")
-    piper_voice_path: str = Field(default="")
+    piper_voice_path: str = Field(default="data/piper/en_US-lessac-high.onnx")
     piper_use_cuda: bool = Field(default=False)
 
     kokoro_model_path: str = Field(default="data/kokoro/kokoro-v1.0.onnx")

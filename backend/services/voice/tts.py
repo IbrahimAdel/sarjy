@@ -103,9 +103,13 @@ class KokoroTextToSpeech(TextToSpeech):
 
 
 def _load_piper(settings: Settings) -> TextToSpeech:
-    path = Path(settings.piper_voice_path) if settings.piper_voice_path else None
-    if path is None or not path.exists():
-        logger.info("No Piper voice configured; TTS disabled.")
+    if not settings.piper_voice_path:
+        logger.info("TTS_PROVIDER=piper but PIPER_VOICE_PATH is unset; TTS disabled.")
+        return NullTextToSpeech()
+
+    path = Path(settings.piper_voice_path)
+    if not path.exists():
+        logger.info("Piper voice not found at %s; TTS disabled.", path)
         return NullTextToSpeech()
 
     try:
@@ -125,12 +129,9 @@ def _load_piper(settings: Settings) -> TextToSpeech:
 def _load_kokoro(settings: Settings) -> TextToSpeech:
     model_path = Path(settings.kokoro_model_path)
     voices_path = Path(settings.kokoro_voices_path)
-    if not model_path.exists() or not voices_path.exists():
-        logger.info(
-            "No Kokoro model configured at %s / %s; TTS disabled.",
-            model_path,
-            voices_path,
-        )
+    missing = [str(path) for path in (model_path, voices_path) if not path.exists()]
+    if missing:
+        logger.info("Kokoro files missing (%s); TTS disabled.", ", ".join(missing))
         return NullTextToSpeech()
 
     try:

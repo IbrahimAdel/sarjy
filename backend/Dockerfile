@@ -54,11 +54,14 @@ COPY . .
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
+ARG PIPER_VOICE=en_US-lessac-high
+
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     HF_HOME=/opt/hf \
-    DATABASE_URL="sqlite:///./data/sarjy_memory.db"
+    DATABASE_URL="sqlite:///./data/sarjy_memory.db" \
+    PIPER_VOICE_PATH="/app/data/piper/${PIPER_VOICE}.onnx"
 
 RUN useradd --create-home --uid 1000 appuser \
     && mkdir -p /app/data \
