@@ -21,9 +21,22 @@ class Settings(BaseSettings):
     whisper_device: str = Field(default="cpu")
     whisper_compute_type: str = Field(default="int8")
     whisper_language: str = Field(default="en")
+    whisper_no_speech_threshold: float = Field(default=0.6)
+    whisper_log_prob_threshold: float = Field(default=-1.0)
+    whisper_vad_filter: bool = Field(default=False)
     partial_interval_ms: int = Field(default=600)
     # Partials only transcribe the most recent audio window to keep CPU bounded.
     partial_window_ms: int = Field(default=2000)
+
+    # Voice activity detection / endpointing. Higher aggressiveness rejects
+    # more background noise; max_utterance_ms guarantees a turn in noisy rooms.
+    vad_aggressiveness: int = Field(default=3, ge=0, le=3)
+    vad_min_speech_ms: int = Field(default=250)
+    vad_silence_ms: int = Field(default=500)
+    vad_speech_pad_ms: int = Field(default=150)
+    vad_barge_in_min_speech_ms: int = Field(default=400)
+    vad_min_energy: float = Field(default=0.0)
+    max_utterance_ms: int = Field(default=15000)
 
     tts_enabled: bool = Field(default=True)
     tts_provider: str = Field(default="piper")

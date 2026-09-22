@@ -19,6 +19,7 @@ class SpeechSegment:
 @dataclass(frozen=True)
 class AudioResult:
     speech_started: bool = False
+    speech_confirmed: bool = False
     segment: SpeechSegment | None = None
 
 
@@ -38,6 +39,9 @@ class VoiceSession:
         silence_ms: int = 700,
         speech_pad_ms: int = 150,
         aggressiveness: int = 2,
+        min_energy: float = 0.0,
+        max_speech_ms: int = 0,
+        barge_in_min_speech_ms: int = 0,
     ) -> None:
         self.sample_rate = sample_rate
         self.frame_duration_ms = frame_duration_ms
@@ -45,11 +49,14 @@ class VoiceSession:
             sample_rate=sample_rate,
             frame_duration_ms=frame_duration_ms,
             aggressiveness=aggressiveness,
+            min_energy=min_energy,
         )
         self._endpoint = EndpointDetector(
             frame_duration_ms=frame_duration_ms,
             min_speech_ms=min_speech_ms,
             silence_ms=silence_ms,
+            max_speech_ms=max_speech_ms,
+            barge_in_min_speech_ms=barge_in_min_speech_ms,
         )
         self._pre_roll: deque[bytes] = deque(
             maxlen=pre_roll_frames(frame_duration_ms, min_speech_ms, speech_pad_ms)
@@ -71,6 +78,7 @@ class VoiceSession:
 
     def process_audio(self, pcm: bytes) -> AudioResult:
         speech_started = False
+        speech_confirmed = False
         for frame, is_speech in self._vad.push(pcm):
             event = self._endpoint.process(is_speech)
             self._pre_roll.append(frame)
@@ -82,17 +90,23 @@ class VoiceSession:
                 speech_started = True
                 continue
 
+            if event is EndpointEvent.SPEECH_CONFIRMED:
+                speech_confirmed = True
+
             if event is EndpointEvent.SPEECH_END:
                 self._segment.extend(frame)
                 return AudioResult(
                     speech_started=speech_started,
+                    speech_confirmed=speech_confirmed,
                     segment=self._finish_segment(),
                 )
 
             if self._capturing:
                 self._segment.extend(frame)
 
-        return AudioResult(speech_started=speech_started)
+        return AudioResult(
+            speech_started=speech_started, speech_confirmed=speech_confirmed
+        )
 
     def _finish_segment(self) -> SpeechSegment:
         pcm = bytes(self._segment)

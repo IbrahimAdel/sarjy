@@ -22,6 +22,14 @@ stt_enabled   = true
 tts_enabled   = true
 tts_provider  = "piper"
 whisper_model = "base.en"
+
+# Voice activity / endpointing (tune for noisy rooms)
+vad_aggressiveness          = 3
+vad_min_speech_ms           = 250
+vad_silence_ms              = 500
+vad_barge_in_min_speech_ms  = 400
+max_utterance_ms            = 15000
+whisper_no_speech_threshold = 0.6
 log_level     = "INFO"
 log_format    = "json"
 

@@ -86,13 +86,49 @@ variable "tts_enabled" {
 variable "tts_provider" {
   description = "TTS backend: piper or kokoro."
   type        = string
-  default     = "piper"
+  default     = "kokoro"
 }
 
 variable "whisper_model" {
   description = "faster-whisper model name."
   type        = string
   default     = "base.en"
+}
+
+variable "vad_aggressiveness" {
+  description = "WebRTC VAD aggressiveness (0-3). Higher rejects more background noise."
+  type        = number
+  default     = 3
+}
+
+variable "vad_min_speech_ms" {
+  description = "Speech duration required before an utterance starts."
+  type        = number
+  default     = 250
+}
+
+variable "vad_silence_ms" {
+  description = "Trailing silence required before an utterance ends."
+  type        = number
+  default     = 500
+}
+
+variable "vad_barge_in_min_speech_ms" {
+  description = "Sustained speech required before interrupting assistant playback."
+  type        = number
+  default     = 400
+}
+
+variable "max_utterance_ms" {
+  description = "Force an endpoint after this much audio so noisy rooms still get a response."
+  type        = number
+  default     = 15000
+}
+
+variable "whisper_no_speech_threshold" {
+  description = "Drop transcript segments the model considers silence above this probability."
+  type        = number
+  default     = 0.6
 }
 
 variable "log_level" {

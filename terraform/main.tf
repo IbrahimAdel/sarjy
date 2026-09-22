@@ -61,6 +61,36 @@ resource "digitalocean_app" "sarjy" {
       }
 
       env {
+        key   = "VAD_AGGRESSIVENESS"
+        value = tostring(var.vad_aggressiveness)
+      }
+
+      env {
+        key   = "VAD_MIN_SPEECH_MS"
+        value = tostring(var.vad_min_speech_ms)
+      }
+
+      env {
+        key   = "VAD_SILENCE_MS"
+        value = tostring(var.vad_silence_ms)
+      }
+
+      env {
+        key   = "VAD_BARGE_IN_MIN_SPEECH_MS"
+        value = tostring(var.vad_barge_in_min_speech_ms)
+      }
+
+      env {
+        key   = "MAX_UTTERANCE_MS"
+        value = tostring(var.max_utterance_ms)
+      }
+
+      env {
+        key   = "WHISPER_NO_SPEECH_THRESHOLD"
+        value = tostring(var.whisper_no_speech_threshold)
+      }
+
+      env {
         key   = "LOG_LEVEL"
         value = var.log_level
       }

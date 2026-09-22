@@ -63,6 +63,51 @@ def test_endpoint_detector_ignores_short_blips():
     assert not detector.in_speech
 
 
+def test_endpoint_detector_confirms_sustained_speech_once():
+    detector = EndpointDetector(
+        frame_duration_ms=FRAME_MS,
+        min_speech_ms=150,
+        silence_ms=700,
+        barge_in_min_speech_ms=300,
+    )
+
+    events = [detector.process(True) for _ in range(10)]
+    assert events[4] is EndpointEvent.SPEECH_START
+    assert events.count(EndpointEvent.SPEECH_CONFIRMED) == 1
+    assert events[-1] is EndpointEvent.SPEECH_CONFIRMED
+
+
+def test_endpoint_detector_holds_barge_in_for_short_speech():
+    detector = EndpointDetector(
+        frame_duration_ms=FRAME_MS,
+        min_speech_ms=150,
+        silence_ms=700,
+        barge_in_min_speech_ms=300,
+    )
+    # 6 frames = 180ms: started, but not yet sustained enough to interrupt.
+    events = [detector.process(True) for _ in range(6)]
+    assert EndpointEvent.SPEECH_CONFIRMED not in events
+
+
+def test_endpoint_detector_forces_end_at_max_duration():
+    detector = EndpointDetector(
+        frame_duration_ms=FRAME_MS,
+        min_speech_ms=150,
+        silence_ms=10000,
+        max_speech_ms=600,
+    )
+
+    end_frame = None
+    for index in range(100):
+        if detector.process(True) is EndpointEvent.SPEECH_END:
+            end_frame = index
+            break
+
+    assert end_frame is not None
+    assert end_frame < 30  # ended on the max-duration path, not the silence path
+    assert not detector.in_speech
+
+
 class _FakeVad:
     frame_bytes = 960
 
@@ -102,3 +147,21 @@ def test_voice_session_detects_speech_and_builds_segment(monkeypatch):
     assert segment.sample_rate == 16000
     assert segment.duration_ms > 0
     assert not voice.capturing
+
+
+def test_voice_session_surfaces_barge_in_confirmation(monkeypatch):
+    monkeypatch.setattr(pipeline, "VoiceActivityDetector", _FakeVad)
+    voice = VoiceSession(
+        sample_rate=16000,
+        frame_duration_ms=FRAME_MS,
+        min_speech_ms=150,
+        silence_ms=700,
+        barge_in_min_speech_ms=300,
+    )
+
+    confirmed = False
+    for _ in range(10):
+        result = voice.process_audio(b"\x01" * 960)
+        confirmed = confirmed or result.speech_confirmed
+
+    assert confirmed

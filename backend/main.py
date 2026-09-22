@@ -84,6 +84,7 @@ class ConnectionState:
     voice: VoiceSession
     last_partial_at: float = field(default=0.0)
     speaking: bool = False
+    status: AssistantState = AssistantState.LISTENING
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     response_task: asyncio.Task[None] | None = None
     partial_task: asyncio.Task[None] | None = None
@@ -116,6 +117,34 @@ async def _send_bytes(
 ) -> None:
     async with state.send_lock:
         await websocket.send_bytes(data)
+
+
+async def _set_status(
+    websocket: WebSocket,
+    state: ConnectionState,
+    status: AssistantState,
+    *,
+    force: bool = False,
+) -> None:
+    """Track the assistant state and only notify the client on real changes."""
+    if not force and state.status == status:
+        return
+    state.status = status
+    await _send_json(websocket, state, status_message(status))
+
+
+def _make_voice(sample_rate: int) -> VoiceSession:
+    settings = get_settings()
+    return VoiceSession(
+        sample_rate=sample_rate,
+        min_speech_ms=settings.vad_min_speech_ms,
+        silence_ms=settings.vad_silence_ms,
+        speech_pad_ms=settings.vad_speech_pad_ms,
+        aggressiveness=settings.vad_aggressiveness,
+        min_energy=settings.vad_min_energy,
+        max_speech_ms=settings.max_utterance_ms,
+        barge_in_min_speech_ms=settings.vad_barge_in_min_speech_ms,
+    )
 
 
 async def _cancel_response(state: ConnectionState) -> None:
@@ -200,7 +229,7 @@ async def _speak(
 
     if not state.speaking:
         state.speaking = True
-        await _send_json(websocket, state, status_message(AssistantState.SPEAKING))
+        await _set_status(websocket, state, AssistantState.SPEAKING)
 
     turn.mark("tts_first_audio")
     frame_bytes = int(output_rate * OUT_FRAME_MS / 1000) * 2
@@ -232,8 +261,17 @@ async def _run_llm(
 ) -> None:
     llm = LLMEngine(user_id=state.user_id, conversation_id=state.conversation_id)
     state.speaking = False
-    await _send_json(websocket, state, status_message(AssistantState.THINKING))
+    await _set_status(websocket, state, AssistantState.THINKING)
     turn.mark("llm_start")
+    logger.info(
+        "llm_start",
+        extra={
+            "fields": {
+                "turn_id": turn.turn_id,
+                "conversation_id": state.conversation_id,
+            }
+        },
+    )
 
     first_token = True
 
@@ -296,7 +334,7 @@ async def _run_llm(
         metrics.record_turn(fields)
 
     state.speaking = False
-    await _send_json(websocket, state, status_message(AssistantState.IDLE))
+    await _set_status(websocket, state, AssistantState.IDLE)
 
 
 async def _start_response(
@@ -347,21 +385,21 @@ async def _handle_text(
         sample_rate = payload.get("sample_rate")
         if sample_rate is not None:
             try:
-                state.voice = VoiceSession(sample_rate=int(sample_rate))
+                state.voice = _make_voice(int(sample_rate))
             except (TypeError, ValueError) as exc:
                 await _send_json(
                     websocket, state, error_message(f"Invalid sample_rate: {exc}")
                 )
                 return
 
-        await _send_json(websocket, state, status_message(AssistantState.LISTENING))
+        await _set_status(websocket, state, AssistantState.LISTENING, force=True)
 
     elif event == ClientEvent.STOP:
         await _cancel_partial(state)
         await _cancel_response(state)
         state.voice.reset()
         state.speaking = False
-        await _send_json(websocket, state, status_message(AssistantState.IDLE))
+        await _set_status(websocket, state, AssistantState.IDLE, force=True)
 
     else:
         await _send_json(websocket, state, error_message(f"Unknown event: {event!r}"))
@@ -427,7 +465,15 @@ async def _handle_audio(
 ) -> None:
     result = state.voice.process_audio(data)
 
-    if result.speech_started:
+    if result.speech_started and state.status in (
+        AssistantState.LISTENING,
+        AssistantState.IDLE,
+    ):
+        await _set_status(websocket, state, AssistantState.LISTENING)
+
+    # Barge-in only interrupts audible playback; during THINKING a stray
+    # utterance must not cancel the turn before it can answer.
+    if result.speech_confirmed and state.status == AssistantState.SPEAKING:
         if state.response_task is not None and not state.response_task.done():
             logger.info(
                 "barge_in",
@@ -435,7 +481,7 @@ async def _handle_audio(
             )
         await _cancel_response(state)
         state.speaking = False
-        await _send_json(websocket, state, status_message(AssistantState.LISTENING))
+        await _set_status(websocket, state, AssistantState.LISTENING)
 
     if result.segment is None:
         await _maybe_send_partial(
@@ -470,6 +516,9 @@ async def _handle_audio(
         },
     )
 
+    # Reflect activity while the (possibly slow) transcription runs.
+    await _set_status(websocket, state, AssistantState.THINKING)
+
     turn.mark("asr_start")
     try:
         text = (
@@ -481,13 +530,13 @@ async def _handle_audio(
         logger.exception("transcription_failed", extra={"fields": fields})
         metrics.record_turn(fields, error=True)
         await _send_json(websocket, state, error_message("Failed to transcribe audio."))
-        await _send_json(websocket, state, status_message(AssistantState.LISTENING))
+        await _set_status(websocket, state, AssistantState.LISTENING)
         return
     turn.mark("asr_end")
 
     if not text:
         logger.info("transcript_empty", extra={"fields": {"turn_id": turn.turn_id}})
-        await _send_json(websocket, state, status_message(AssistantState.LISTENING))
+        await _set_status(websocket, state, AssistantState.LISTENING)
         return
 
     logger.info(
@@ -527,7 +576,7 @@ async def websocket_audio_endpoint(websocket: WebSocket) -> None:
         user_id=user_id,
         conversation_id=websocket.query_params.get("conversation_id") or gen_uuid(),
         session=AsyncSessionLocal(),
-        voice=VoiceSession(sample_rate=settings.sample_rate),
+        voice=_make_voice(settings.sample_rate),
     )
     logger.info(
         "connection_open",
@@ -539,7 +588,7 @@ async def websocket_audio_endpoint(websocket: WebSocket) -> None:
         },
     )
 
-    await _send_json(websocket, state, status_message(AssistantState.LISTENING))
+    await _set_status(websocket, state, AssistantState.LISTENING, force=True)
 
     try:
         while True:
