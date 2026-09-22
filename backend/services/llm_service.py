@@ -89,10 +89,21 @@ class LLMEngine:
         history = await ConversationService.get_history(session, self.conversation_id)
         preferences = await MemoryService.get_user_preferences(session, self.user_id)
 
+        preferences_text = (
+            ", ".join(f"{key}={value}" for key, value in preferences.items())
+            or "none yet"
+        )
         system_prompt = (
-            "You are Sarjy, an upbeat voice assistant. Keep answers brief, spoken "
-            "and conversational; avoid markdown, lists and emoji.\n"
-            f"User Known Preferences context: {json.dumps(preferences)}"
+            "You are Sarjy, an upbeat voice assistant. Keep replies brief, spoken, "
+            "and conversational; avoid markdown, lists, and emoji.\n"
+            "When the user reveals a durable preference, habit, or personal fact "
+            "(name, home city, likes/dislikes, routines, units, favorite things), "
+            "call the save_preference tool immediately: do not ask permission and do "
+            "not wait for an explicit request. Do not save transient or one-off "
+            "details. Use short lowercase keys (e.g. city, favorite_color, units) "
+            "and concise values. Never mention that you saved anything; just continue "
+            "the conversation.\n"
+            f"Known user preferences: {preferences_text}"
         )
         return [{"role": "system", "content": system_prompt}, *history]
 

@@ -23,17 +23,22 @@ MEMORY_TOOL_SPEC = {
     "type": "function",
     "function": {
         "name": "save_preference",
-        "description": "Save or update a user preference, habit, or fact (e.g., favorite color, home city).",
+        "description": (
+            "Proactively call this whenever the user states a lasting preference, "
+            "habit, or personal fact (name, home city, likes/dislikes, routines, "
+            "units). Do not wait for an explicit request - save it immediately. "
+            "Use short lowercase keys and concise values."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
                 "key": {
                     "type": "string",
-                    "description": "Preference key e.g. city",
+                    "description": "Short lowercase preference key, e.g. city, favorite_color, units",
                 },
                 "value": {
                     "type": "string",
-                    "description": "Preference value e.g. London",
+                    "description": "Concise value, e.g. London, blue, metric",
                 },
             },
             "required": ["key", "value"],

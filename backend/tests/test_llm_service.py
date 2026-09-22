@@ -56,6 +56,26 @@ def test_parse_tool_arguments(raw, expected):
     assert _parse_tool_arguments(raw) == expected
 
 
+async def test_system_prompt_instructs_proactive_saving(
+    db_session, create_user, monkeypatch
+):
+    await create_user(db_session, "u1")
+    await MemoryService.set_user_preference(db_session, "u1", "city", "London")
+
+    client = _FakeClient([[_chunk(content="ok.")]])
+    monkeypatch.setattr(llm_service, "get_openai_client", lambda: client)
+
+    engine = LLMEngine(user_id="u1", conversation_id="c1")
+    async for _ in engine.generate_response_stream(db_session, "I live in London"):
+        pass
+
+    system = client.chat.completions.calls[0]["messages"][0]
+    assert system["role"] == "system"
+    assert "save_preference" in system["content"]
+    assert "immediately" in system["content"]
+    assert "city=London" in system["content"]
+
+
 async def test_direct_response_streams_and_persists(
     db_session, create_user, monkeypatch
 ):
