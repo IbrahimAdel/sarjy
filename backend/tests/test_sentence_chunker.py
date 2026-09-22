@@ -28,3 +28,19 @@ async def test_short_sentence_is_flushed_at_end():
 
 async def test_no_empty_chunk_for_empty_stream():
     assert await _chunks([]) == []
+
+
+async def test_on_token_receives_every_token():
+    seen: list[str] = []
+
+    async def collect(token: str) -> None:
+        seen.append(token)
+
+    async def source() -> AsyncIterator[str]:
+        for token in ["Hello ", "world."]:
+            yield token
+
+    chunks = [chunk async for chunk in _stream_sentences(source(), on_token=collect)]
+
+    assert seen == ["Hello ", "world."]
+    assert chunks == ["Hello world."]

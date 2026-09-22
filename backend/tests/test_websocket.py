@@ -123,7 +123,7 @@ def test_text_turn_streams_response(monkeypatch):
         messages = _collect_until_idle(ws)
 
     chunks = [m["text"] for m in messages if m.get("event") == "text_chunk"]
-    assert chunks == ["Hello world."]
+    assert chunks == ["Hello ", "world."]
     states = [m["state"] for m in messages if m.get("event") == "status"]
     assert states[0] == "thinking"
     assert states[-1] == "idle"
@@ -205,4 +205,4 @@ def test_audio_turn_transcribes_and_responds(monkeypatch):
     finals = [m["text"] for m in messages if m.get("event") == "transcript_final"]
     assert finals == ["fake transcript"]
     chunks = [m["text"] for m in messages if m.get("event") == "text_chunk"]
-    assert chunks == ["Hello world."]
+    assert chunks == ["Hello ", "world."]

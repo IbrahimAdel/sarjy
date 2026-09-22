@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     )
 
     openai_api_key: str = Field(default="")
-    openai_model: str = Field(default="gpt-4o-mini")
+    openai_model: str = Field(default="gpt-4.1-mini")
 
     database_url: str = Field(default="sqlite:///./data/sarjy_memory.db")
 
@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     whisper_compute_type: str = Field(default="int8")
     whisper_language: str = Field(default="en")
     partial_interval_ms: int = Field(default=600)
+    # Partials only transcribe the most recent audio window to keep CPU bounded.
+    partial_window_ms: int = Field(default=2000)
 
     tts_enabled: bool = Field(default=True)
     tts_provider: str = Field(default="piper")

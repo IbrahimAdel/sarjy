@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import time
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
@@ -86,6 +86,7 @@ class ConnectionState:
     speaking: bool = False
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     response_task: asyncio.Task[None] | None = None
+    partial_task: asyncio.Task[None] | None = None
 
 
 @app.get("/")
@@ -131,9 +132,44 @@ async def _cancel_response(state: ConnectionState) -> None:
         logger.debug("Response task raised during cancellation", exc_info=True)
 
 
-async def _stream_sentences(tokens: AsyncIterator[str]) -> AsyncIterator[str]:
+async def _cancel_partial(state: ConnectionState) -> None:
+    task = state.partial_task
+    state.partial_task = None
+    if task is None or task.done():
+        return
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    except Exception:
+        logger.debug("Partial task raised during cancellation", exc_info=True)
+
+
+async def _drain_partial(state: ConnectionState) -> None:
+    """Wait for an in-flight partial so STT calls never overlap."""
+    task = state.partial_task
+    state.partial_task = None
+    if task is None or task.done():
+        return
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    except Exception:
+        logger.debug("Partial task raised while draining", exc_info=True)
+
+
+async def _stream_sentences(
+    tokens: AsyncIterator[str],
+    *,
+    on_token: Callable[[str], Awaitable[None]] | None = None,
+) -> AsyncIterator[str]:
+    """Forward tokens (for live text) and yield sentence-sized chunks for TTS."""
     buffer = ""
     async for token in tokens:
+        if on_token is not None:
+            await on_token(token)
         buffer += token
         if len(buffer) >= MIN_SENTENCE_CHARS and buffer.rstrip().endswith(
             SENTENCE_ENDINGS
@@ -172,6 +208,21 @@ async def _speak(
         await _send_bytes(websocket, state, frame)
 
 
+async def _speak_sentences(
+    websocket: WebSocket,
+    state: ConnectionState,
+    tts: TextToSpeech,
+    queue: asyncio.Queue[str | None],
+    turn: TurnMetrics,
+) -> None:
+    """Play queued sentences so TTS never blocks token streaming."""
+    while True:
+        sentence = await queue.get()
+        if sentence is None:
+            return
+        await _speak(websocket, state, tts, sentence, turn)
+
+
 async def _run_llm(
     websocket: WebSocket,
     state: ConnectionState,
@@ -186,31 +237,51 @@ async def _run_llm(
 
     first_token = True
 
-    async def _tokens() -> AsyncIterator[str]:
+    async def _on_token(token: str) -> None:
         nonlocal first_token
-        async for token in llm.generate_response_stream(
-            session=state.session, user_transcript=transcript
-        ):
-            if first_token:
-                turn.mark("llm_first_token")
-                first_token = False
-            yield token
+        if first_token:
+            turn.mark("llm_first_token")
+            first_token = False
+        await _send_json(
+            websocket, state, {"event": ServerEvent.TEXT_CHUNK, "text": token}
+        )
+
+    tts_queue: asyncio.Queue[str | None] = asyncio.Queue()
+    speaker_task = asyncio.create_task(
+        _speak_sentences(websocket, state, tts, tts_queue, turn)
+    )
 
     try:
-        async for sentence in _stream_sentences(_tokens()):
-            await _send_json(
-                websocket,
-                state,
-                {"event": ServerEvent.TEXT_CHUNK, "text": sentence},
-            )
-            await _speak(websocket, state, tts, sentence, turn)
+        async for sentence in _stream_sentences(
+            llm.generate_response_stream(
+                session=state.session, user_transcript=transcript
+            ),
+            on_token=_on_token,
+        ):
+            tts_queue.put_nowait(sentence)
+        tts_queue.put_nowait(None)
+        await speaker_task
     except asyncio.CancelledError:
+        speaker_task.cancel()
+        try:
+            await speaker_task
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.debug("Speaker task raised during cancellation", exc_info=True)
         turn.mark("done")
         fields = turn.fields()
         logger.info("turn_cancelled", extra={"fields": fields})
         metrics.record_turn(fields, cancelled=True)
         raise
     except Exception:
+        speaker_task.cancel()
+        try:
+            await speaker_task
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.debug("Speaker task raised during error teardown", exc_info=True)
         turn.mark("done")
         fields = turn.fields()
         logger.exception("llm_generation_failed", extra={"fields": fields})
@@ -235,6 +306,7 @@ async def _start_response(
     transcript: str,
     turn: TurnMetrics,
 ) -> None:
+    await _cancel_partial(state)
     await _cancel_response(state)
     state.response_task = asyncio.create_task(
         _run_llm(websocket, state, tts, transcript, turn)
@@ -264,6 +336,7 @@ async def _handle_text(
         await _start_response(websocket, state, tts, text, turn)
 
     elif event == ClientEvent.START:
+        await _cancel_partial(state)
         await _cancel_response(state)
         state.speaking = False
 
@@ -284,6 +357,7 @@ async def _handle_text(
         await _send_json(websocket, state, status_message(AssistantState.LISTENING))
 
     elif event == ClientEvent.STOP:
+        await _cancel_partial(state)
         await _cancel_response(state)
         state.voice.reset()
         state.speaking = False
@@ -298,8 +372,13 @@ async def _maybe_send_partial(
     state: ConnectionState,
     stt: SpeechToText,
     partial_interval_s: float,
+    partial_window_s: float,
 ) -> None:
-    if not stt.available or not state.voice.capturing:
+    if not stt.available or not state.voice.capturing or state.speaking:
+        return
+
+    # One transcription at a time; never block the receive loop waiting for it.
+    if state.partial_task is not None and not state.partial_task.done():
         return
 
     now = time.monotonic()
@@ -308,16 +387,32 @@ async def _maybe_send_partial(
     state.last_partial_at = now
 
     pcm = state.voice.snapshot_pcm()
+    window_bytes = int(state.voice.sample_rate * partial_window_s) * 2
+    if window_bytes > 0:
+        pcm = pcm[-window_bytes:]
     if len(pcm) < MIN_PARTIAL_BYTES:
         return
 
+    state.partial_task = asyncio.create_task(
+        _transcribe_partial(websocket, state, stt, pcm)
+    )
+
+
+async def _transcribe_partial(
+    websocket: WebSocket,
+    state: ConnectionState,
+    stt: SpeechToText,
+    pcm: bytes,
+) -> None:
     try:
         text = (await stt.transcribe(pcm, state.voice.sample_rate)).strip()
+    except asyncio.CancelledError:
+        raise
     except Exception:
         logger.exception("Partial transcription failed")
         return
 
-    if text:
+    if text and state.voice.capturing:
         await _send_json(websocket, state, transcript_message(text, final=False))
 
 
@@ -328,6 +423,7 @@ async def _handle_audio(
     tts: TextToSpeech,
     data: bytes,
     partial_interval_s: float,
+    partial_window_s: float,
 ) -> None:
     result = state.voice.process_audio(data)
 
@@ -342,10 +438,14 @@ async def _handle_audio(
         await _send_json(websocket, state, status_message(AssistantState.LISTENING))
 
     if result.segment is None:
-        await _maybe_send_partial(websocket, state, stt, partial_interval_s)
+        await _maybe_send_partial(
+            websocket, state, stt, partial_interval_s, partial_window_s
+        )
         return
 
     state.last_partial_at = time.monotonic()
+    # Serialise STT: an in-flight partial must finish before the final pass.
+    await _drain_partial(state)
 
     if not stt.available:
         logger.info(
@@ -421,6 +521,7 @@ async def websocket_audio_endpoint(websocket: WebSocket) -> None:
     stt: SpeechToText = app.state.stt
     tts: TextToSpeech = app.state.tts
     partial_interval_s = settings.partial_interval_ms / 1000
+    partial_window_s = settings.partial_window_ms / 1000
 
     state = ConnectionState(
         user_id=user_id,
@@ -454,10 +555,17 @@ async def websocket_audio_endpoint(websocket: WebSocket) -> None:
             elif data is not None:
                 assert isinstance(data, bytes)
                 await _handle_audio(
-                    websocket, state, stt, tts, data, partial_interval_s
+                    websocket,
+                    state,
+                    stt,
+                    tts,
+                    data,
+                    partial_interval_s,
+                    partial_window_s,
                 )
     except WebSocketDisconnect:
         logger.info("connection_closed", extra={"fields": {"user_id": state.user_id}})
     finally:
+        await _cancel_partial(state)
         await _cancel_response(state)
         await state.session.close()

@@ -13,7 +13,7 @@ deploy_on_push = true
 project_name        = "sarjy"
 project_environment = "Production"
 
-openai_model = "gpt-4o-mini"
+openai_model = "gpt-4.1-mini"
 
 backend_instance_size_slug = "apps-s-1vcpu-2gb"
 backend_instance_count     = 1

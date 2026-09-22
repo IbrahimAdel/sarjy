@@ -12,7 +12,7 @@ resource "digitalocean_app" "sarjy" {
     service {
       name               = "backend"
       instance_count     = 1
-      instance_size_slug = "apps-s-1vcpu-2gb"
+      instance_size_slug = "apps-d-1vcpu-2gb"
       source_dir         = "backend"
       dockerfile_path    = "backend/Dockerfile"
       http_port          = 8000

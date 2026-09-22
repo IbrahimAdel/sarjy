@@ -66,7 +66,7 @@ variable "openai_api_key" {
 variable "openai_model" {
   description = "OpenAI model used by the backend."
   type        = string
-  default     = "gpt-4o-mini"
+  default     = "gpt-4.1-mini"
 }
 
 
