@@ -19,7 +19,7 @@ variable "app_name" {
 variable "region" {
   description = "App Platform region slug, e.g. nyc, sfo, ams, sgp, lon, fra, tor, blr, syd."
   type        = string
-  default     = "nyc"
+  default     = "fra"
 }
 
 variable "project_name" {
